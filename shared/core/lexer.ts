@@ -128,6 +128,7 @@ class Lexer {
       }
       if (c === "$") {
         this.advance();
+        while (this.src[this.i] === " " || this.src[this.i] === "\t") this.advance();
         const name = this.match(IDENT);
         if (name === null) {
           this.diagnostics.report(pos, "expected a state name after `$`, as in `$count`");

@@ -33,7 +33,7 @@ export function segmentMessage(text: string, phase: "streaming" | "complete"): M
       kind: "fence",
       language,
       code: fence.body,
-      complete: phase === "complete" || fence.closed,
+      complete: fence.closed,
       fenceIndex: fenceIndex++,
     });
     cursor = fence.close + 1;
@@ -54,11 +54,10 @@ export function splitTimelineMessage(
   if (!segments.some((segment) => segment.kind === "fence")) return undefined;
 
   const items: PluginTimelineItem[] = [];
-  segments.forEach((segment, index) => {
+  segments.forEach((segment) => {
     if (segment.kind === "fence") {
       items.push({
         type: "plugin",
-        id: `fence-${segment.fenceIndex}`,
         kind: GENUI_BLOCK_KIND,
         version: 1,
         data: {
@@ -72,7 +71,6 @@ export function splitTimelineMessage(
     } else {
       items.push({
         type: "plugin",
-        id: `text-${index}`,
         kind: GENUI_TEXT_KIND,
         version: 1,
         data: { text: segment.text, phase },

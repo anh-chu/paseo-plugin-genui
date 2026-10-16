@@ -454,7 +454,7 @@ export function SpecBlockView({
   return (
     <LiveUi
       program={shown.program}
-      compileDiagnostics={complete && !result.complete ? result.diagnostics : shown.diagnostics}
+      compileDiagnostics={result.complete ? result.diagnostics : []}
       source={code}
       stateKey={stateKey}
       data={data}
