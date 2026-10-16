@@ -1,4 +1,6 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PaseoApi } from "@getpaseo/client";
@@ -222,13 +224,85 @@ export function loadAgentAudio(
   );
 }
 
+let cachedPluginRoot: string | null = null;
+
+function resolvePluginRoot(): string {
+  if (cachedPluginRoot !== null) return cachedPluginRoot;
+
+  const hasGallery = (dir: string): boolean => {
+    try {
+      return existsSync(path.join(dir, "gallery", "Card.ui"));
+    } catch {
+      return false;
+    }
+  };
+
+  try {
+    if (typeof import.meta.url === "string" && import.meta.url.startsWith("file:")) {
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      const candidate =
+        path.basename(here) === "server" || path.basename(here) === "dist"
+          ? path.dirname(here)
+          : here;
+      if (hasGallery(candidate)) {
+        cachedPluginRoot = candidate;
+        return candidate;
+      }
+    }
+  } catch {
+    // Compiled server bundle has no file:// import.meta.url
+  }
+
+  if (hasGallery(process.cwd())) {
+    cachedPluginRoot = process.cwd();
+    return cachedPluginRoot;
+  }
+
+  const paseoHome = process.env.PASEO_HOME || path.join(os.homedir(), ".paseo");
+  try {
+    const raw = readFileSync(path.join(paseoHome, "config.json"), "utf8");
+    const cfg = JSON.parse(raw) as { plugins?: Record<string, { path?: string }> };
+    for (const entry of Object.values(cfg.plugins ?? {})) {
+      if (typeof entry?.path === "string" && hasGallery(entry.path)) {
+        cachedPluginRoot = entry.path;
+        return entry.path;
+      }
+    }
+  } catch {
+    // Ignore config read failure
+  }
+
+  try {
+    const pluginsDir = path.join(paseoHome, "plugins");
+    for (const idDir of readdirSync(pluginsDir)) {
+      const idPath = path.join(pluginsDir, idDir);
+      for (const revDir of readdirSync(idPath)) {
+        const checkout = path.join(idPath, revDir, "checkout");
+        if (hasGallery(checkout)) {
+          cachedPluginRoot = checkout;
+          return checkout;
+        }
+        const nm = path.join(idPath, revDir, "node_modules");
+        if (existsSync(nm)) {
+          for (const pkg of readdirSync(nm)) {
+            const pkgPath = path.join(nm, pkg);
+            if (hasGallery(pkgPath)) {
+              cachedPluginRoot = pkgPath;
+              return pkgPath;
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore scan failure
+  }
+
+  return process.cwd();
+}
+
 export function packagePath(...parts: string[]): string {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const root =
-    path.basename(here) === "server" || path.basename(here) === "dist"
-      ? path.dirname(here)
-      : here;
-  return path.join(root, ...parts);
+  return path.join(resolvePluginRoot(), ...parts);
 }
 
 export function galleryDir(): string {

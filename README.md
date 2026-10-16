@@ -2,7 +2,11 @@
 
 **Agents answer with charts, diagrams, maps, plans, and forms rendered inline in the Paseo chat timeline.**
 
-![Component gallery carousel](assets/carousel.webp)
+![Inline Map, Calendar, and Budget UI in Paseo chat](assets/screenshot-chat.png)
+
+![Gen-UI Gallery with 86 components and 173 live examples](assets/screenshot-gallery.png)
+
+![Interactive Playground in Paseo](assets/screenshot-playground.png)
 
 Ported from [ComicBit/bb-plugin-genui](https://github.com/ComicBit/bb-plugin-genui) (Apache-2.0) to Paseo's native timeline transformer, React Native surface, and daemon RPC architecture.
 
@@ -10,6 +14,12 @@ Ported from [ComicBit/bb-plugin-genui](https://github.com/ComicBit/bb-plugin-gen
 
 ```bash
 paseo plugin add git:anh-chu/paseo-plugin-genui
+```
+
+Or from npm:
+
+```bash
+paseo plugin add npm:paseo-plugin-genui
 ```
 
 Requires Paseo 0.11.2 or later.
@@ -52,7 +62,7 @@ Paseo renders a card with a plan switch, a seat slider, and a live total. Moving
 
 - `/genui [prompt]` — Teach an existing agent the Generative UI component language.
 - `/genui-demo [ComponentName]` — Insert a live interactive Gen-UI block into the current chat (e.g. `/genui-demo Decision` or `/genui-demo Map`).
-- `/genui-gallery` — Open the **Gen-UI Gallery** screen (170+ examples across all 86 components, plus a live spec Playground).
+- `/genui-gallery` — Open the **Gen-UI Gallery** screen (173 examples across all 86 components, plus a live spec Playground).
 
 ## Develop
 
