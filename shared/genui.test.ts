@@ -1,4 +1,7 @@
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { PaseoApi } from "@getpaseo/client";
 import {
   collectLoads,
   compile,
@@ -16,7 +19,14 @@ import {
   UI_REFERENCE_MORE,
 } from "./instructions";
 import { splitTimelineMessage } from "./segment";
-import { listGallery, loadGalleryFile, readGallerySpec } from "../server/data-source";
+import {
+  listGallery,
+  loadAgentAudio,
+  loadAgentFile,
+  loadAgentImage,
+  loadGalleryFile,
+  readGallerySpec,
+} from "../server/data-source";
 
 describe("paseo-plugin-genui core, instructions, and gallery", () => {
   it("compiles every example in the agent instructions cleanly", () => {
@@ -118,5 +128,55 @@ describe("paseo-plugin-genui core, instructions, and gallery", () => {
     );
     expect(valid.ok).toBe(true);
     expect(valid.report).toContain("No errors.");
+  });
+
+  it("refuses symlinks and intermediate directory links escaping the workspace root across data, image, and audio reads", async () => {
+    const testRoot = path.join("/tmp/opencode", `genui-symlink-test-${Date.now()}`);
+    const workspace = path.join(testRoot, "workspace");
+    const outside = path.join(testRoot, "outside");
+    await mkdir(workspace, { recursive: true });
+    await mkdir(outside, { recursive: true });
+
+    try {
+      const secretTxt = path.join(outside, "secret.txt");
+      const secretPng = path.join(outside, "secret.png");
+      const secretWav = path.join(outside, "secret.wav");
+      const insideTxt = path.join(workspace, "allowed.txt");
+      await writeFile(secretTxt, "top-secret-outside-line\n", "utf8");
+      await writeFile(secretPng, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      await writeFile(secretWav, Buffer.from("RIFF0000WAVEfmt "));
+      await writeFile(insideTxt, "inside-workspace-line\n", "utf8");
+
+      await symlink(secretTxt, path.join(workspace, "report.txt"));
+      await symlink(secretPng, path.join(workspace, "report.png"));
+      await symlink(secretWav, path.join(workspace, "report.wav"));
+      await symlink(outside, path.join(workspace, "linked-dir"));
+
+      const mockPaseo = {
+        agents: {
+          ref: () => ({
+            current: () => ({ cwd: workspace }),
+            refresh: async () => ({ agent: { cwd: workspace }, project: null }),
+          }),
+        },
+      } as unknown as PaseoApi;
+
+      const allowed = await loadAgentFile(mockPaseo, "agent_symlink_test", "allowed.txt", { raw: true });
+      expect(allowed).toEqual({ ok: true, value: "inside-workspace-line\n" });
+
+      const directSymlink = await loadAgentFile(mockPaseo, "agent_symlink_test", "report.txt", { raw: true });
+      expect(directSymlink.ok).toBe(false);
+
+      const dirSymlink = await loadAgentFile(mockPaseo, "agent_symlink_test", "linked-dir/secret.txt", { raw: true });
+      expect(dirSymlink.ok).toBe(false);
+
+      const imageSymlink = await loadAgentImage(mockPaseo, "agent_symlink_test", "report.png");
+      expect(imageSymlink.ok).toBe(false);
+
+      const audioSymlink = await loadAgentAudio(mockPaseo, "agent_symlink_test", "report.wav");
+      expect(audioSymlink.ok).toBe(false);
+    } finally {
+      await rm(testRoot, { recursive: true, force: true });
+    }
   });
 });

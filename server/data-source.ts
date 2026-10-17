@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { constants, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdir, open, readdir, readFile, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,9 +47,15 @@ type FileContent =
 
 type FileReader = (requested: string, maxBytes: number) => Promise<FileContent>;
 
+const AGENT_REFUSAL = "only files in this agent's workspace, its thread storage or /tmp can be loaded";
+const GALLERY_REFUSAL = "gallery specs can only load files in gallery/";
+
 function contains(root: string, target: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(target));
-  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  if (resolvedRoot === resolvedTarget) return false;
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 export function agentStorageDir(agentId: string): string {
@@ -79,9 +85,58 @@ export async function resolveAgentCwd(paseo: PaseoApi, agentId: string): Promise
   }
 }
 
-async function readLocalFile(target: string, requested: string, maxBytes: number): Promise<FileContent> {
+interface Attempt {
+  readonly root: string;
+  readonly target: string;
+}
+
+type AttemptOutcome =
+  | { ok: true; content: string; encoding: "utf8" | "base64" }
+  | { ok: false; error: string; outsideRoot?: boolean };
+
+/**
+ * Resolves both `root` and `target` with `realpath` before checking containment,
+ * rejects any symlink or intermediate directory link that escapes `realRoot`,
+ * and reads from the validated canonical path with `O_NOFOLLOW`.
+ */
+async function readConfinedFile(
+  root: string,
+  target: string,
+  requested: string,
+  maxBytes: number,
+  refusalError: string,
+): Promise<AttemptOutcome> {
+  if (!contains(root, target)) {
+    return { ok: false, error: refusalError, outsideRoot: true };
+  }
+
+  let realRoot: string;
   try {
-    const info = await stat(target);
+    realRoot = await realpath(root);
+  } catch {
+    return { ok: false, error: refusalError };
+  }
+
+  let realTarget: string;
+  try {
+    realTarget = await realpath(target);
+  } catch (cause) {
+    const code = typeof cause === "object" && cause !== null && "code" in cause ? cause.code : null;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { ok: false, error: "file not found" };
+    }
+    return { ok: false, error: cause instanceof Error ? cause.message : String(cause) };
+  }
+
+  if (!contains(realRoot, realTarget)) {
+    return { ok: false, error: refusalError, outsideRoot: true };
+  }
+
+  const openFlags = constants.O_RDONLY | (typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0);
+  let handle;
+  try {
+    handle = await open(realTarget, openFlags);
+    const info = await handle.stat();
     if (!info.isFile()) return { ok: false, error: "not a regular file" };
     if (info.size > maxBytes) {
       return { ok: false, error: `${info.size} bytes is over the ${maxBytes}-byte limit` };
@@ -90,7 +145,7 @@ async function readLocalFile(target: string, requested: string, maxBytes: number
     const binary =
       (Object.hasOwn(IMAGE_TYPES, extension) && extension !== "svg") ||
       Object.hasOwn(AUDIO_TYPES, extension);
-    const content = await readFile(target);
+    const content = await handle.readFile();
     return binary
       ? { ok: true, content: content.toString("base64"), encoding: "base64" }
       : { ok: true, content: content.toString("utf8"), encoding: "utf8" };
@@ -100,7 +155,18 @@ async function readLocalFile(target: string, requested: string, maxBytes: number
       ok: false,
       error: code === "ENOENT" ? "file not found" : cause instanceof Error ? cause.message : String(cause),
     };
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
+}
+
+function tempAttempts(target: string): Attempt[] {
+  if (contains("/private/tmp", target)) return [{ root: "/private/tmp", target }];
+  if (!contains("/tmp", target)) return [];
+  return [
+    { root: "/private/tmp", target: path.join("/private", target) },
+    { root: "/tmp", target },
+  ];
 }
 
 async function readAgentFile(
@@ -113,50 +179,37 @@ async function readAgentFile(
   await mkdir(storageRoot, { recursive: true }).catch(() => undefined);
   const workspaceCwd = await resolveAgentCwd(paseo, agentId);
 
-  const candidates: string[] = [];
+  const inside = (root: string | null, target: string): Attempt[] =>
+    root !== null && contains(root, target) ? [{ root, target }] : [];
+
+  let attempts: Attempt[];
   if (requested.startsWith(BB_STORAGE_PREFIX)) {
     const rel = requested.slice(BB_STORAGE_PREFIX.length);
-    const target = path.resolve(storageRoot, rel);
-    if (contains(storageRoot, target)) candidates.push(target);
-    const galleryTarget = path.resolve(galleryDir(), rel);
-    if (contains(galleryDir(), galleryTarget)) candidates.push(galleryTarget);
+    attempts = inside(storageRoot, path.resolve(storageRoot, rel));
   } else if (requested.startsWith(PASEO_STORAGE_PREFIX)) {
     const rel = requested.slice(PASEO_STORAGE_PREFIX.length);
-    const target = path.resolve(storageRoot, rel);
-    if (contains(storageRoot, target)) candidates.push(target);
+    attempts = inside(storageRoot, path.resolve(storageRoot, rel));
   } else if (path.isAbsolute(requested)) {
     const target = path.resolve(requested);
-    if (
-      contains(storageRoot, target) ||
-      (workspaceCwd !== null && contains(workspaceCwd, target)) ||
-      contains("/tmp", target) ||
-      contains("/private/tmp", target)
-    ) {
-      candidates.push(target);
-    }
+    attempts = [...inside(storageRoot, target), ...inside(workspaceCwd, target)].slice(0, 1);
+    if (attempts.length === 0) attempts = tempAttempts(target);
   } else {
-    if (workspaceCwd !== null) {
-      const target = path.resolve(workspaceCwd, requested);
-      if (contains(workspaceCwd, target)) candidates.push(target);
-    }
-    const storageTarget = path.resolve(storageRoot, requested);
-    if (contains(storageRoot, storageTarget)) candidates.push(storageTarget);
-    const galleryTarget = path.resolve(galleryDir(), requested);
-    if (contains(galleryDir(), galleryTarget)) candidates.push(galleryTarget);
+    attempts = [
+      ...inside(workspaceCwd, workspaceCwd !== null ? path.resolve(workspaceCwd, requested) : ""),
+      ...inside(storageRoot, path.resolve(storageRoot, requested)),
+    ];
   }
 
-  if (candidates.length === 0) {
-    return {
-      ok: false,
-      error: "only files in this agent's workspace, its thread storage or /tmp can be loaded",
-    };
+  if (attempts.length === 0) {
+    return { ok: false, error: AGENT_REFUSAL };
   }
 
   let firstFailure: FileContent | undefined;
-  for (const candidate of candidates) {
-    const result = await readLocalFile(candidate, requested, maxBytes);
+  for (const attempt of attempts) {
+    const result = await readConfinedFile(attempt.root, attempt.target, requested, maxBytes, AGENT_REFUSAL);
     if (result.ok) return result;
-    firstFailure ??= result;
+    if (result.outsideRoot) return { ok: false, error: AGENT_REFUSAL };
+    firstFailure ??= { ok: false, error: result.error };
   }
   return firstFailure!;
 }
@@ -341,9 +394,10 @@ async function readGalleryFile(requested: string, maxBytes: number): Promise<Fil
     : requested;
   const target = path.resolve(root, clean);
   if (path.isAbsolute(clean) || !contains(root, target)) {
-    return { ok: false, error: "gallery specs can only load files in gallery/" };
+    return { ok: false, error: GALLERY_REFUSAL };
   }
-  return readLocalFile(target, clean, maxBytes);
+  const result = await readConfinedFile(root, target, clean, maxBytes, GALLERY_REFUSAL);
+  return result.ok ? result : { ok: false, error: result.error };
 }
 
 export function loadGalleryFile(requested: string, { raw = false }: { raw?: boolean } = {}): Promise<LoadedData> {
