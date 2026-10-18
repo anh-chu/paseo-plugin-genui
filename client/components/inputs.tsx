@@ -678,7 +678,7 @@ export function OptionCards({ props }: { props: Props }) {
                 gap: 6,
               }}
             >
-              {opt.image ? <LoadedImageView src={opt.image} alt={opt.title} height={100} /> : null}
+              {opt.image ? <LoadedImageView src={opt.image} alt={opt.title} height={100} zoomable={false} /> : null}
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 {iconName ? <Icon name={iconName} size={15} color={theme.colors.accent} /> : null}
                 <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "600", flex: 1 }}>

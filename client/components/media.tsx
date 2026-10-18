@@ -116,7 +116,7 @@ export function Gallery({ props }: { props: Props }) {
               {item.query ? (
                 <ImageSearch props={{ query: item.query, alt: item.caption ?? item.query }} />
               ) : item.src ? (
-                <LoadedImageView src={item.src} alt={item.caption} height={150} />
+                <LoadedImageView src={item.src} alt={item.caption} height={150} zoomable={false} />
               ) : null}
               {item.caption ? (
                 <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11.5 }}>
@@ -139,7 +139,7 @@ export function Gallery({ props }: { props: Props }) {
             {selected.query ? (
               <ImageSearch props={{ query: selected.query, alt: selected.caption ?? selected.query }} />
             ) : selected.src ? (
-              <LoadedImageView src={selected.src} alt={selected.caption} height={360} />
+              <LoadedImageView src={selected.src} alt={selected.caption} height={360} zoomable={false} />
             ) : null}
           </Modal.Content>
         </Modal>

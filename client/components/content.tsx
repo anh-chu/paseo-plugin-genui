@@ -174,13 +174,17 @@ export function LoadedImageView({
   src,
   alt,
   height = 200,
+  zoomable = true,
 }: {
   src: string;
   alt?: string | null;
   height?: number;
+  /** Tapping opens the image full size; off where the image sits inside another tap target. */
+  zoomable?: boolean;
 }) {
   const { theme, loadImage } = useUiRuntime();
   const [state, setState] = useState<ImageUrl | null>(null);
+  const [zoomed, setZoomed] = useState(false);
 
   useEffect(() => {
     if (!loadImage || !src) return;
@@ -227,21 +231,36 @@ export function LoadedImageView({
     );
   }
 
+  const picture = (frameHeight: number) => (
+    <RNImage
+      source={{ uri: state.url }}
+      accessibilityLabel={alt ?? src}
+      resizeMode="contain"
+      style={{
+        width: "100%",
+        height: frameHeight,
+        borderRadius: 8,
+        backgroundColor: theme.colors.surface2,
+      }}
+    />
+  );
+
   return (
     <View style={{ gap: 4 }}>
-      <RNImage
-        source={{ uri: state.url }}
-        accessibilityLabel={alt ?? src}
-        resizeMode="contain"
-        style={{
-          width: "100%",
-          height,
-          borderRadius: 8,
-          backgroundColor: theme.colors.surface2,
-        }}
-      />
+      {zoomable ? (
+        <Pressable accessibilityRole="imagebutton" accessibilityLabel={`View ${alt ?? src} full size`} onPress={() => setZoomed(true)}>
+          {picture(height)}
+        </Pressable>
+      ) : (
+        picture(height)
+      )}
       {alt ? (
         <RNText style={{ color: theme.colors.foregroundMuted, fontSize: 11.5 }}>{alt}</RNText>
+      ) : null}
+      {zoomed ? (
+        <Modal title={alt ?? src} open={zoomed} onOpenChange={setZoomed}>
+          <Modal.Content>{picture(520)}</Modal.Content>
+        </Modal>
       ) : null}
     </View>
   );
