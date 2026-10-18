@@ -6,6 +6,7 @@ import { LIMITS } from "./catalog";
 import type { Pos } from "./diagnostics";
 import { JUnitError, readJUnit } from "./junit";
 import type { Value } from "./types";
+import { defineClass } from "./define-class";
 
 export type LoadedData = { readonly ok: true; readonly value: Value } | { readonly ok: false; readonly error: string };
 
@@ -211,7 +212,14 @@ export function parseDataFile(path: string, text: string): LoadedData {
 }
 
 /** A malformed-input reason, already phrased for the user. */
-class DataError extends Error {}
+const DataError = defineClass(
+  function (this: Error, message: string): void {
+    this.message = message;
+  },
+  undefined,
+  Error,
+);
+type DataError = InstanceType<typeof DataError>;
 
 function parseJsonLines(text: string): unknown[] {
   const values: unknown[] = [];

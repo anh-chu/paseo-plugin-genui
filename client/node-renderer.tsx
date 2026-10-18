@@ -1,6 +1,7 @@
-import React, { Component, type ComponentType, type ReactNode } from "react";
+import React, { Component, type ComponentClass, type ComponentType, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import type { ComponentName } from "../shared/core/catalog";
+import { defineClass } from "../shared/core/define-class";
 import type { UiNode } from "../shared/core/types";
 import { text, type Props } from "../shared/logic/values";
 import { useUiRuntime } from "./runtime";
@@ -126,24 +127,41 @@ interface BoundaryProps {
   children: ReactNode;
 }
 
-export class NodeBoundary extends Component<BoundaryProps, { error: string | null }> {
-  override state: { error: string | null } = { error: null };
-
-  static getDerivedStateFromError(cause: unknown): { error: string } {
-    return { error: cause instanceof Error ? cause.message : String(cause) };
-  }
-
-  override componentDidUpdate(previous: BoundaryProps): void {
-    if (this.state.error !== null && previous.node !== this.props.node) {
-      this.setState({ error: null });
-    }
-  }
-
-  override render(): ReactNode {
-    return this.state.error === null ? (
-      this.props.children
-    ) : (
-      <ErrorLine message={this.state.error} />
-    );
-  }
+interface BoundaryState {
+  error: string | null;
 }
+
+/**
+ * An error boundary needs `getDerivedStateFromError`, which only a React class
+ * component can have. Hermes has no `class` syntax, so this is built on
+ * `Component`'s prototype instead (see shared/core/define-class.ts).
+ */
+const NodeBoundaryBase = defineClass(
+  function (this: Component<BoundaryProps, BoundaryState>, props: BoundaryProps): void {
+    // React's Component is a plain function underneath; it sets props, context and updater.
+    (Component as unknown as (this: unknown, props: BoundaryProps) => void).call(this, props);
+    this.state = { error: null };
+  },
+  {
+    componentDidUpdate(previous: BoundaryProps): void {
+      if (this.state.error !== null && previous.node !== this.props.node) {
+        this.setState({ error: null });
+      }
+    },
+
+    render(): ReactNode {
+      return this.state.error === null ? (
+        this.props.children
+      ) : (
+        <ErrorLine message={this.state.error} />
+      );
+    },
+  },
+  Component,
+);
+
+export const NodeBoundary = Object.assign(NodeBoundaryBase, {
+  getDerivedStateFromError(cause: unknown): BoundaryState {
+    return { error: cause instanceof Error ? cause.message : String(cause) };
+  },
+}) as unknown as ComponentClass<BoundaryProps, BoundaryState>;

@@ -14,6 +14,7 @@ import {
 import type { DiagnosticList, Pos } from "./diagnostics";
 import { loadPath } from "./data";
 import type { Value } from "./types";
+import { defineClass } from "./define-class";
 
 // Maps, not the catalog objects, so spec-controlled names like `constructor`
 // never hit Object.prototype.
@@ -184,391 +185,400 @@ export function validate(statements: readonly Statement[], diagnostics: Diagnost
   return new Validator(diagnostics).run(statements);
 }
 
-class Validator {
-  private readonly states = new Map<string, { readonly index: number; readonly decl: Decl }>();
-  private readonly named = new Map<string, Decl>();
+interface ValidatorFields {
+  states: Map<string, { readonly index: number; readonly decl: Decl }>;
+  named: Map<string, Decl>;
+  diagnostics: DiagnosticList;
+}
 
-  constructor(private readonly diagnostics: DiagnosticList) {}
-
-  run(statements: readonly Statement[]): Program {
-    const stateDecls: Decl[] = [];
-    const roots: Expr[] = [];
-    for (const statement of statements) {
-      if (statement.kind === "root") {
-        roots.push(statement.value);
-        continue;
+const Validator = defineClass(
+  function (this: ValidatorFields, diagnostics: DiagnosticList): void {
+    this.diagnostics = diagnostics;
+    this.states = new Map<string, { readonly index: number; readonly decl: Decl }>();
+    this.named = new Map<string, Decl>();
+  },
+  {
+    run(statements: readonly Statement[]): Program {
+      const stateDecls: Decl[] = [];
+      const roots: Expr[] = [];
+      for (const statement of statements) {
+        if (statement.kind === "root") {
+          roots.push(statement.value);
+          continue;
+        }
+        this.forbidden(statement.name, statement.pos);
+        const isState = statement.kind === "state";
+        const previous = isState ? this.states.get(statement.name)?.decl : this.named.get(statement.name);
+        if (previous !== undefined) {
+          const label = isState ? `$${statement.name}` : statement.name;
+          this.diagnostics.report(statement.pos, `\`${label}\` is already declared on line ${previous.pos.line}`);
+        } else if (isState) {
+          this.states.set(statement.name, { index: stateDecls.length, decl: statement });
+          stateDecls.push(statement);
+        } else {
+          this.named.set(statement.name, statement);
+        }
       }
-      this.forbidden(statement.name, statement.pos);
-      const isState = statement.kind === "state";
-      const previous = isState ? this.states.get(statement.name)?.decl : this.named.get(statement.name);
-      if (previous !== undefined) {
-        const label = isState ? `$${statement.name}` : statement.name;
-        this.diagnostics.report(statement.pos, `\`${label}\` is already declared on line ${previous.pos.line}`);
-      } else if (isState) {
-        this.states.set(statement.name, { index: stateDecls.length, decl: statement });
-        stateDecls.push(statement);
-      } else {
-        this.named.set(statement.name, statement);
-      }
-    }
 
-    const used = new Set<string>();
-    const namedRefs = new Map<string, Refs>();
-    for (const [name, decl] of this.named) {
-      const refs = this.declRefs(decl);
-      namedRefs.set(name, refs);
-      for (const ref of refs.named) if (ref.name !== name) used.add(ref.name);
-    }
-    for (const root of roots) for (const ref of this.refs(root).named) used.add(ref.name);
-
-    const rootDecl = this.named.get("root");
-    if (roots.length === 0) {
-      if (rootDecl === undefined) {
-        this.diagnostics.report(
-          { line: 1, column: 1 },
-          "Nothing to render: add a bare component expression such as Card(...)",
-        );
-      } else {
-        roots.push({ type: "ident", name: "root", pos: rootDecl.pos });
-        used.add("root");
+      const used = new Set<string>();
+      const namedRefs = new Map<string, Refs>();
+      for (const [name, decl] of this.named) {
+        const refs = this.declRefs(decl);
+        namedRefs.set(name, refs);
+        for (const ref of refs.named) if (ref.name !== name) used.add(ref.name);
       }
-    }
+      for (const root of roots) for (const ref of this.refs(root).named) used.add(ref.name);
 
-    this.checkCycles(namedRefs);
-    const statesOf = this.transitiveStates(namedRefs);
-    stateDecls.forEach((decl, index) => {
-      const refs = this.refs(decl.value);
-      for (const ref of refs.named) used.add(ref.name);
-      for (const ref of refs.states) {
-        const target = this.states.get(ref.name);
-        if (target === undefined || target.index < index) continue;
-        this.diagnostics.report(
-          ref.pos,
-          target.index === index
-            ? `\`$${decl.name}\` cannot use itself in its initial value`
-            : `\`$${ref.name}\` is declared after \`$${decl.name}\`; initial values can only use earlier state`,
-        );
+      const rootDecl = this.named.get("root");
+      if (roots.length === 0) {
+        if (rootDecl === undefined) {
+          this.diagnostics.report(
+            { line: 1, column: 1 },
+            "Nothing to render: add a bare component expression such as Card(...)",
+          );
+        } else {
+          roots.push({ type: "ident", name: "root", pos: rootDecl.pos });
+          used.add("root");
+        }
       }
-      for (const ref of refs.named) {
-        const late = [...statesOf(ref.name)].find((name) => (this.states.get(name)?.index ?? -1) >= index);
-        if (late !== undefined) {
+
+      this.checkCycles(namedRefs);
+      const statesOf = this.transitiveStates(namedRefs);
+      stateDecls.forEach((decl, index) => {
+        const refs = this.refs(decl.value);
+        for (const ref of refs.named) used.add(ref.name);
+        for (const ref of refs.states) {
+          const target = this.states.get(ref.name);
+          if (target === undefined || target.index < index) continue;
           this.diagnostics.report(
             ref.pos,
-            `\`${ref.name}\` reads \`$${late}\`, which is not initialized before \`$${decl.name}\``,
+            target.index === index
+              ? `\`$${decl.name}\` cannot use itself in its initial value`
+              : `\`$${ref.name}\` is declared after \`$${decl.name}\`; initial values can only use earlier state`,
           );
         }
-      }
-    });
-
-    for (const [name, decl] of this.named) {
-      if (!used.has(name)) this.diagnostics.report(decl.pos, `\`${name}\` is never used`, "warning");
-    }
-    return { states: stateDecls, named: this.named, roots };
-  }
-
-  private refs(expr: Expr): Refs {
-    const refs: Refs = { named: [], states: [] };
-    this.check(expr, [], refs);
-    return refs;
-  }
-
-  /** A named value's refs; a named function (`share = p => ...`) is checked with its parameters in scope. */
-  private declRefs(decl: Decl): Refs {
-    if (decl.value.type !== "arrow") return this.refs(decl.value);
-    if (COMPONENT_SPECS.has(decl.name) || ACTION_SPECS.has(decl.name) || FUNCTION_ARITY.has(decl.name)) {
-      this.diagnostics.report(decl.pos, `\`${decl.name}\` is a built-in name; give your function another name`);
-    }
-    const refs: Refs = { named: [], states: [] };
-    this.check(decl.value.body, decl.value.params, refs);
-    return refs;
-  }
-
-  private checkCycles(namedRefs: ReadonlyMap<string, Refs>): void {
-    const status = new Map<string, "visiting" | "done">();
-    const path: string[] = [];
-    const visit = (name: string): void => {
-      const current = status.get(name);
-      if (current === "done") return;
-      if (current === "visiting") {
-        const cycle = [...path.slice(path.indexOf(name)), name];
-        this.diagnostics.report(this.named.get(name)!.pos, `\`${name}\` depends on itself: ${cycle.join(" → ")}`);
-        return;
-      }
-      status.set(name, "visiting");
-      path.push(name);
-      for (const ref of namedRefs.get(name)?.named ?? []) if (this.named.has(ref.name)) visit(ref.name);
-      path.pop();
-      status.set(name, "done");
-    };
-    for (const name of this.named.keys()) visit(name);
-  }
-
-  /** State names each named value reads, directly or through other named values. */
-  private transitiveStates(namedRefs: ReadonlyMap<string, Refs>): (name: string) => ReadonlySet<string> {
-    const memo = new Map<string, Set<string>>();
-    const statesOf = (name: string): ReadonlySet<string> => {
-      const cached = memo.get(name);
-      if (cached !== undefined) return cached;
-      const result = new Set<string>();
-      memo.set(name, result); // cycles were reported; this stops the recursion
-      const refs = namedRefs.get(name);
-      for (const ref of refs?.states ?? []) result.add(ref.name);
-      for (const ref of refs?.named ?? []) for (const state of statesOf(ref.name)) result.add(state);
-      return result;
-    };
-    return statesOf;
-  }
-
-  private forbidden(name: string, pos: Pos): void {
-    if ((FORBIDDEN_PROPERTIES as readonly string[]).includes(name)) {
-      this.diagnostics.report(pos, `\`${name}\` is not accessible`);
-    }
-  }
-
-  private check(expr: Expr, params: readonly string[], refs: Refs): void {
-    switch (expr.type) {
-      case "literal":
-        return;
-      case "template":
-        for (const part of expr.parts) this.check(part, params, refs);
-        return;
-      case "state":
-        if (!this.states.has(expr.name)) {
-          const hint = this.named.has(expr.name)
-            ? ` \`${expr.name}\` is a named value; write it without \`$\`.`
-            : didYouMean(expr.name, this.states.keys(), (name) => `$${name}`) ||
-              ` Declare it first, as in \`$${expr.name} = 0\`.`;
-          this.diagnostics.report(expr.pos, `unknown state \`$${expr.name}\`.${hint}`);
-        }
-        refs.states.push(expr);
-        return;
-      case "ident":
-        if (params.includes(expr.name)) return;
-        if (this.named.has(expr.name)) {
-          if (this.named.get(expr.name)!.value.type === "arrow") {
-            this.diagnostics.report(expr.pos, `\`${expr.name}\` is a function; call it, as in \`${expr.name}(...)\``);
+        for (const ref of refs.named) {
+          const late = [...statesOf(ref.name)].find((name) => (this.states.get(name)?.index ?? -1) >= index);
+          if (late !== undefined) {
+            this.diagnostics.report(
+              ref.pos,
+              `\`${ref.name}\` reads \`$${late}\`, which is not initialized before \`$${decl.name}\``,
+            );
           }
-          refs.named.push(expr);
+        }
+      });
+
+      for (const [name, decl] of this.named) {
+        if (!used.has(name)) this.diagnostics.report(decl.pos, `\`${name}\` is never used`, "warning");
+      }
+      return { states: stateDecls, named: this.named, roots };
+    },
+
+    refs(expr: Expr): Refs {
+      const refs: Refs = { named: [], states: [] };
+      this.check(expr, [], refs);
+      return refs;
+    },
+
+    /** A named value's refs; a named function (`share = p => ...`) is checked with its parameters in scope. */
+    declRefs(decl: Decl): Refs {
+      if (decl.value.type !== "arrow") return this.refs(decl.value);
+      if (COMPONENT_SPECS.has(decl.name) || ACTION_SPECS.has(decl.name) || FUNCTION_ARITY.has(decl.name)) {
+        this.diagnostics.report(decl.pos, `\`${decl.name}\` is a built-in name; give your function another name`);
+      }
+      const refs: Refs = { named: [], states: [] };
+      this.check(decl.value.body, decl.value.params, refs);
+      return refs;
+    },
+
+    checkCycles(namedRefs: ReadonlyMap<string, Refs>): void {
+      const status = new Map<string, "visiting" | "done">();
+      const path: string[] = [];
+      const visit = (name: string): void => {
+        const current = status.get(name);
+        if (current === "done") return;
+        if (current === "visiting") {
+          const cycle = [...path.slice(path.indexOf(name)), name];
+          this.diagnostics.report(this.named.get(name)!.pos, `\`${name}\` depends on itself: ${cycle.join(" → ")}`);
           return;
         }
-        this.diagnostics.report(expr.pos, this.unknownName(expr.name, params));
-        return;
-      case "list":
-        for (const item of expr.items) this.check(item, params, refs);
-        return;
-      case "object":
-        for (const entry of expr.entries) {
-          this.forbidden(entry.key, entry.pos);
-          this.check(entry.value, params, refs);
-        }
-        return;
-      case "unary":
-        this.check(expr.operand, params, refs);
-        return;
-      case "binary":
-        this.check(expr.left, params, refs);
-        this.check(expr.right, params, refs);
-        return;
-      case "conditional":
-        this.check(expr.test, params, refs);
-        this.check(expr.then, params, refs);
-        this.check(expr.else, params, refs);
-        return;
-      case "member":
-        this.forbidden(expr.name, expr.pos);
-        this.check(expr.object, params, refs);
-        return;
-      case "index":
-        if (expr.index.type === "literal" && typeof expr.index.value === "string") {
-          this.forbidden(expr.index.value, expr.index.pos);
-        }
-        this.check(expr.object, params, refs);
-        this.check(expr.index, params, refs);
-        return;
-      case "arrow":
-        this.diagnostics.report(expr.pos, ARROW_ONLY);
-        this.check(expr.body, [...params, ...expr.params], refs);
-        return;
-      case "method":
-        this.method(expr, params, refs);
-        return;
-      case "call":
-        this.call(expr, params, refs);
-        return;
-    }
-  }
+        status.set(name, "visiting");
+        path.push(name);
+        for (const ref of namedRefs.get(name)?.named ?? []) if (this.named.has(ref.name)) visit(ref.name);
+        path.pop();
+        status.set(name, "done");
+      };
+      for (const name of this.named.keys()) visit(name);
+    },
 
-  private unknownName(name: string, params: readonly string[]): string {
-    if (this.states.has(name)) return `\`${name}\` is not defined. Did you mean \`$${name}\`?`;
-    if (COMPONENT_SPECS.has(name) || ACTION_SPECS.has(name) || FUNCTION_ARITY.has(name)) {
-      return `\`${name}\` must be called, as in \`${name}(...)\``;
-    }
-    const hint = didYouMean(name, [...params, ...this.named.keys()]);
-    return `\`${name}\` is not defined.${hint || ` Declare it first, as in \`${name} = ...\`.`}`;
-  }
+    /** State names each named value reads, directly or through other named values. */
+    transitiveStates(namedRefs: ReadonlyMap<string, Refs>): (name: string) => ReadonlySet<string> {
+      const memo = new Map<string, Set<string>>();
+      const statesOf = (name: string): ReadonlySet<string> => {
+        const cached = memo.get(name);
+        if (cached !== undefined) return cached;
+        const result = new Set<string>();
+        memo.set(name, result); // cycles were reported; this stops the recursion
+        const refs = namedRefs.get(name);
+        for (const ref of refs?.states ?? []) result.add(ref.name);
+        for (const ref of refs?.named ?? []) for (const state of statesOf(ref.name)) result.add(state);
+        return result;
+      };
+      return statesOf;
+    },
 
-  private method(expr: Extract<Expr, { type: "method" }>, params: readonly string[], refs: Refs): void {
-    this.check(expr.object, params, refs);
-    for (const arg of expr.named) {
-      this.diagnostics.report(arg.pos, "methods take positional arguments only");
-      this.check(arg.value, params, refs);
-    }
-    const arity = METHOD_ARITY.get(expr.name);
-    if (arity === undefined) {
-      const hint = didYouMean(expr.name, METHOD_ARITY.keys(), (name) => `.${name}()`);
-      this.diagnostics.report(
-        expr.pos,
-        `\`.${expr.name}()\` is not an allowed method.${hint} Lists: ${METHODS.list.join(", ")}. Text: ${METHODS.string.join(", ")}. Numbers: ${METHODS.number.join(", ")}.`,
-      );
-    } else if (expr.args.length < arity[0] || expr.args.length > arity[1]) {
-      this.diagnostics.report(expr.pos, `\`.${expr.name}()\` takes ${arityText(arity)}`);
-    }
-    const [first, ...rest] = expr.args;
-    if (LAMBDA_METHODS.has(expr.name) && first !== undefined) {
-      if (first.type !== "arrow") {
-        this.diagnostics.report(first.pos, `\`.${expr.name}()\` takes a function, as in \`x => x.price\``);
-        this.check(first, params, refs);
-      } else {
-        if (first.params.length > 2) {
-          this.diagnostics.report(first.pos, `\`.${expr.name}()\` passes (item, index); use at most 2 parameters`);
-        }
-        this.check(first.body, [...params, ...first.params], refs);
+    forbidden(name: string, pos: Pos): void {
+      if ((FORBIDDEN_PROPERTIES as readonly string[]).includes(name)) {
+        this.diagnostics.report(pos, `\`${name}\` is not accessible`);
       }
-    } else if (first !== undefined) {
-      this.check(first, params, refs);
-    }
-    for (const arg of rest) this.check(arg, params, refs);
-  }
+    },
 
-  private call(expr: CallExpr, params: readonly string[], refs: Refs): void {
-    const spec = COMPONENT_SPECS.get(expr.name) ?? ACTION_SPECS.get(expr.name);
-    const own = this.named.get(expr.name)?.value;
-    if (spec !== undefined) {
-      this.catalogCall(expr, spec);
-    } else if (own?.type === "arrow" && !params.includes(expr.name)) {
-      if (expr.named.length > 0) {
-        this.diagnostics.report(expr.named[0].pos, `\`${expr.name}\` takes positional arguments only`);
+    check(expr: Expr, params: readonly string[], refs: Refs): void {
+      switch (expr.type) {
+        case "literal":
+          return;
+        case "template":
+          for (const part of expr.parts) this.check(part, params, refs);
+          return;
+        case "state":
+          if (!this.states.has(expr.name)) {
+            const hint = this.named.has(expr.name)
+              ? ` \`${expr.name}\` is a named value; write it without \`$\`.`
+              : didYouMean(expr.name, this.states.keys(), (name) => `$${name}`) ||
+                ` Declare it first, as in \`$${expr.name} = 0\`.`;
+            this.diagnostics.report(expr.pos, `unknown state \`$${expr.name}\`.${hint}`);
+          }
+          refs.states.push(expr);
+          return;
+        case "ident":
+          if (params.includes(expr.name)) return;
+          if (this.named.has(expr.name)) {
+            if (this.named.get(expr.name)!.value.type === "arrow") {
+              this.diagnostics.report(expr.pos, `\`${expr.name}\` is a function; call it, as in \`${expr.name}(...)\``);
+            }
+            refs.named.push(expr);
+            return;
+          }
+          this.diagnostics.report(expr.pos, this.unknownName(expr.name, params));
+          return;
+        case "list":
+          for (const item of expr.items) this.check(item, params, refs);
+          return;
+        case "object":
+          for (const entry of expr.entries) {
+            this.forbidden(entry.key, entry.pos);
+            this.check(entry.value, params, refs);
+          }
+          return;
+        case "unary":
+          this.check(expr.operand, params, refs);
+          return;
+        case "binary":
+          this.check(expr.left, params, refs);
+          this.check(expr.right, params, refs);
+          return;
+        case "conditional":
+          this.check(expr.test, params, refs);
+          this.check(expr.then, params, refs);
+          this.check(expr.else, params, refs);
+          return;
+        case "member":
+          this.forbidden(expr.name, expr.pos);
+          this.check(expr.object, params, refs);
+          return;
+        case "index":
+          if (expr.index.type === "literal" && typeof expr.index.value === "string") {
+            this.forbidden(expr.index.value, expr.index.pos);
+          }
+          this.check(expr.object, params, refs);
+          this.check(expr.index, params, refs);
+          return;
+        case "arrow":
+          this.diagnostics.report(expr.pos, ARROW_ONLY);
+          this.check(expr.body, [...params, ...expr.params], refs);
+          return;
+        case "method":
+          this.method(expr, params, refs);
+          return;
+        case "call":
+          this.call(expr, params, refs);
+          return;
       }
-      if (expr.args.length > own.params.length) {
-        const count = own.params.length;
-        this.diagnostics.report(expr.pos, `\`${expr.name}\` takes ${count} argument${count === 1 ? "" : "s"}`);
+    },
+
+    unknownName(name: string, params: readonly string[]): string {
+      if (this.states.has(name)) return `\`${name}\` is not defined. Did you mean \`$${name}\`?`;
+      if (COMPONENT_SPECS.has(name) || ACTION_SPECS.has(name) || FUNCTION_ARITY.has(name)) {
+        return `\`${name}\` must be called, as in \`${name}(...)\``;
       }
-      refs.named.push(expr);
-    } else {
-      const arity = FUNCTION_ARITY.get(expr.name);
+      const hint = didYouMean(name, [...params, ...this.named.keys()]);
+      return `\`${name}\` is not defined.${hint || ` Declare it first, as in \`${name} = ...\`.`}`;
+    },
+
+    method(expr: Extract<Expr, { type: "method" }>, params: readonly string[], refs: Refs): void {
+      this.check(expr.object, params, refs);
+      for (const arg of expr.named) {
+        this.diagnostics.report(arg.pos, "methods take positional arguments only");
+        this.check(arg.value, params, refs);
+      }
+      const arity = METHOD_ARITY.get(expr.name);
       if (arity === undefined) {
-        this.diagnostics.report(expr.pos, this.unknownCallee(expr.name, params));
-      } else {
+        const hint = didYouMean(expr.name, METHOD_ARITY.keys(), (name) => `.${name}()`);
+        this.diagnostics.report(
+          expr.pos,
+          `\`.${expr.name}()\` is not an allowed method.${hint} Lists: ${METHODS.list.join(", ")}. Text: ${METHODS.string.join(", ")}. Numbers: ${METHODS.number.join(", ")}.`,
+        );
+      } else if (expr.args.length < arity[0] || expr.args.length > arity[1]) {
+        this.diagnostics.report(expr.pos, `\`.${expr.name}()\` takes ${arityText(arity)}`);
+      }
+      const [first, ...rest] = expr.args;
+      if (LAMBDA_METHODS.has(expr.name) && first !== undefined) {
+        if (first.type !== "arrow") {
+          this.diagnostics.report(first.pos, `\`.${expr.name}()\` takes a function, as in \`x => x.price\``);
+          this.check(first, params, refs);
+        } else {
+          if (first.params.length > 2) {
+            this.diagnostics.report(first.pos, `\`.${expr.name}()\` passes (item, index); use at most 2 parameters`);
+          }
+          this.check(first.body, [...params, ...first.params], refs);
+        }
+      } else if (first !== undefined) {
+        this.check(first, params, refs);
+      }
+      for (const arg of rest) this.check(arg, params, refs);
+    },
+
+    call(expr: CallExpr, params: readonly string[], refs: Refs): void {
+      const spec = COMPONENT_SPECS.get(expr.name) ?? ACTION_SPECS.get(expr.name);
+      const own = this.named.get(expr.name)?.value;
+      if (spec !== undefined) {
+        this.catalogCall(expr, spec);
+      } else if (own?.type === "arrow" && !params.includes(expr.name)) {
         if (expr.named.length > 0) {
           this.diagnostics.report(expr.named[0].pos, `\`${expr.name}\` takes positional arguments only`);
         }
-        if (expr.args.length < arity[0] || expr.args.length > arity[1]) {
-          this.diagnostics.report(expr.pos, `\`${expr.name}\` takes ${arityText(arity)}: ${FUNCTIONS[expr.name as FunctionName]}`);
-        } else if (expr.name === "Load") {
-          this.literalPath(expr.args[0], "Load");
+        if (expr.args.length > own.params.length) {
+          const count = own.params.length;
+          this.diagnostics.report(expr.pos, `\`${expr.name}\` takes ${count} argument${count === 1 ? "" : "s"}`);
         }
-      }
-    }
-    for (const arg of expr.args) this.check(arg, params, refs);
-    for (const arg of expr.named) this.check(arg.value, params, refs);
-  }
-
-  private unknownCallee(name: string, params: readonly string[]): string {
-    if (this.named.has(name) || params.includes(name) || this.states.has(name)) {
-      return `\`${name}\` is a value and cannot be called; only components, actions and functions can`;
-    }
-    const isFunctionLike = name[0] === name[0].toLowerCase();
-    const candidates = [...COMPONENT_SPECS.keys(), ...ACTION_SPECS.keys(), ...FUNCTION_ARITY.keys()];
-    const fallback = isFunctionLike
-      ? ` Functions: ${[...FUNCTION_ARITY.keys()].join(", ")}.`
-      : ` Components: ${[...COMPONENT_SPECS.keys()].join(", ")}.`;
-    return `\`${name}\` is not a component, action or function.${didYouMean(name, candidates) || fallback}`;
-  }
-
-  /** The host fetches files before evaluating, so the path must be readable from the source alone. */
-  private literalPath(arg: Expr, owner: "Load" | "Snippet"): void {
-    const path = loadPath(arg);
-    if (path === null) {
-      const usage =
-        owner === "Load"
-          ? '`Load` takes a plain string path, as in Load("data/sales.csv")'
-          : '`Snippet` takes its path as a literal string, as in Snippet("src/app.ts", 10, 40)';
-      this.diagnostics.report(
-        arg.pos,
-        `${usage}; the file is read before the UI runs, so the path cannot be computed or use \`\${}\``,
-      );
-    } else if (path.trim() === "") {
-      this.diagnostics.report(arg.pos, `\`${owner}\` needs a file path`);
-    }
-  }
-
-  /** Maps arguments onto catalog params and checks what is knowable before evaluation. */
-  private catalogCall(expr: CallExpr, spec: ComponentSpec): void {
-    const sig = signature(expr.name, spec);
-    const slots: (Expr | undefined)[] = spec.params.map((_, index) => expr.args[index]);
-    if (expr.args.length > spec.params.length) {
-      this.diagnostics.report(expr.args[spec.params.length].pos, `too many arguments: ${sig}`);
-    }
-    for (const arg of expr.named) {
-      const index = spec.params.findIndex((param) => param.name === arg.name);
-      if (index < 0) {
-        const hint = didYouMean(arg.name, spec.params.map((param) => param.name));
-        this.diagnostics.report(arg.pos, `\`${expr.name}\` has no parameter \`${arg.name}\`.${hint} ${sig}`);
-      } else if (slots[index] !== undefined) {
-        this.diagnostics.report(arg.pos, `\`${arg.name}\` is given twice: ${sig}`);
+        refs.named.push(expr);
       } else {
-        slots[index] = arg.value;
+        const arity = FUNCTION_ARITY.get(expr.name);
+        if (arity === undefined) {
+          this.diagnostics.report(expr.pos, this.unknownCallee(expr.name, params));
+        } else {
+          if (expr.named.length > 0) {
+            this.diagnostics.report(expr.named[0].pos, `\`${expr.name}\` takes positional arguments only`);
+          }
+          if (expr.args.length < arity[0] || expr.args.length > arity[1]) {
+            this.diagnostics.report(expr.pos, `\`${expr.name}\` takes ${arityText(arity)}: ${FUNCTIONS[expr.name as FunctionName]}`);
+          } else if (expr.name === "Load") {
+            this.literalPath(expr.args[0], "Load");
+          }
+        }
       }
-    }
-    spec.params.forEach((param, index) => {
-      const slot = slots[index];
-      if (slot === undefined) {
-        if (!param.optional) this.diagnostics.report(expr.pos, `\`${expr.name}\` is missing \`${param.name}\`: ${sig}`);
-      } else {
-        this.checkParam(expr.name, param, slot);
-      }
-    });
-  }
+      for (const arg of expr.args) this.check(arg, params, refs);
+      for (const arg of expr.named) this.check(arg.value, params, refs);
+    },
 
-  private checkParam(owner: string, param: ParamSpec, slot: Expr): void {
-    const label = `\`${owner}\` ${param.name}`;
-    if (owner === "Snippet" && param.name === "path") this.literalPath(slot, "Snippet");
-    // A bare state name (`plan` for `$plan`) is already reported with a `$` suggestion.
-    const isBareState = slot.type === "ident" && this.states.has(slot.name);
-    if (param.kind === "binding" && slot.type !== "state" && !isBareState) {
-      this.diagnostics.report(slot.pos, `${label} must be a state variable written as \`$name\``);
-    }
-    if (param.kind === "binding" && slot.type === "state") {
-      const initial = this.states.get(slot.name)?.decl.value;
-      const kind = initial === undefined ? undefined : staticKind(initial);
-      const mismatch = kind === undefined ? null : stateMismatch(label, param, slot.name, kind, "starts as");
-      // A literal the input can read losslessly is only worth a warning.
-      const coercible = initial?.type === "literal" && coerceState(param.holds, initial.value) !== undefined;
-      if (mismatch !== null) this.diagnostics.report(slot.pos, mismatch, coercible ? "warning" : "error");
-    }
-    const wanted = LITERAL_KINDS[param.kind];
-    const got = staticKind(slot);
-    if (wanted !== undefined && got !== undefined && got !== wanted && !(got === "null" && (param.optional || param.nullable))) {
-      this.diagnostics.report(slot.pos, `${label} needs ${EXPECTED[param.kind]}, got ${DESCRIPTIONS[got]}`);
-    }
-    if (param.kind === "enum" && slot.type === "literal" && !(slot.value === null && param.optional)) {
-      const values = param.values ?? [];
-      if (typeof slot.value !== "string" || !values.includes(slot.value)) {
-        this.diagnostics.report(slot.pos, `${label} must be one of ${values.join(", ")}; got ${JSON.stringify(slot.value)}`);
+    unknownCallee(name: string, params: readonly string[]): string {
+      if (this.named.has(name) || params.includes(name) || this.states.has(name)) {
+        return `\`${name}\` is a value and cannot be called; only components, actions and functions can`;
       }
-    }
-    if (param.kind === "actions") {
-      for (const item of slot.type === "list" ? slot.items : [slot]) {
-        let got: string | undefined;
-        if (item.type === "call" && (COMPONENT_SPECS.has(item.name) || FUNCTION_ARITY.has(item.name))) {
-          got = `\`${item.name}(...)\``;
-        } else if (item.type === "literal" && item.value !== null) {
-          got = JSON.stringify(item.value);
-        }
-        if (got !== undefined) {
-          this.diagnostics.report(item.pos, `${label} takes actions: ${ACTION_LIST}; got ${got}`);
+      const isFunctionLike = name[0] === name[0].toLowerCase();
+      const candidates = [...COMPONENT_SPECS.keys(), ...ACTION_SPECS.keys(), ...FUNCTION_ARITY.keys()];
+      const fallback = isFunctionLike
+        ? ` Functions: ${[...FUNCTION_ARITY.keys()].join(", ")}.`
+        : ` Components: ${[...COMPONENT_SPECS.keys()].join(", ")}.`;
+      return `\`${name}\` is not a component, action or function.${didYouMean(name, candidates) || fallback}`;
+    },
+
+    /** The host fetches files before evaluating, so the path must be readable from the source alone. */
+    literalPath(arg: Expr, owner: "Load" | "Snippet"): void {
+      const path = loadPath(arg);
+      if (path === null) {
+        const usage =
+          owner === "Load"
+            ? '`Load` takes a plain string path, as in Load("data/sales.csv")'
+            : '`Snippet` takes its path as a literal string, as in Snippet("src/app.ts", 10, 40)';
+        this.diagnostics.report(
+          arg.pos,
+          `${usage}; the file is read before the UI runs, so the path cannot be computed or use \`\${}\``,
+        );
+      } else if (path.trim() === "") {
+        this.diagnostics.report(arg.pos, `\`${owner}\` needs a file path`);
+      }
+    },
+
+    /** Maps arguments onto catalog params and checks what is knowable before evaluation. */
+    catalogCall(expr: CallExpr, spec: ComponentSpec): void {
+      const sig = signature(expr.name, spec);
+      const slots: (Expr | undefined)[] = spec.params.map((_, index) => expr.args[index]);
+      if (expr.args.length > spec.params.length) {
+        this.diagnostics.report(expr.args[spec.params.length].pos, `too many arguments: ${sig}`);
+      }
+      for (const arg of expr.named) {
+        const index = spec.params.findIndex((param) => param.name === arg.name);
+        if (index < 0) {
+          const hint = didYouMean(arg.name, spec.params.map((param) => param.name));
+          this.diagnostics.report(arg.pos, `\`${expr.name}\` has no parameter \`${arg.name}\`.${hint} ${sig}`);
+        } else if (slots[index] !== undefined) {
+          this.diagnostics.report(arg.pos, `\`${arg.name}\` is given twice: ${sig}`);
+        } else {
+          slots[index] = arg.value;
         }
       }
-    }
-  }
-}
+      spec.params.forEach((param, index) => {
+        const slot = slots[index];
+        if (slot === undefined) {
+          if (!param.optional) this.diagnostics.report(expr.pos, `\`${expr.name}\` is missing \`${param.name}\`: ${sig}`);
+        } else {
+          this.checkParam(expr.name, param, slot);
+        }
+      });
+    },
+
+    checkParam(owner: string, param: ParamSpec, slot: Expr): void {
+      const label = `\`${owner}\` ${param.name}`;
+      if (owner === "Snippet" && param.name === "path") this.literalPath(slot, "Snippet");
+      // A bare state name (`plan` for `$plan`) is already reported with a `$` suggestion.
+      const isBareState = slot.type === "ident" && this.states.has(slot.name);
+      if (param.kind === "binding" && slot.type !== "state" && !isBareState) {
+        this.diagnostics.report(slot.pos, `${label} must be a state variable written as \`$name\``);
+      }
+      if (param.kind === "binding" && slot.type === "state") {
+        const initial = this.states.get(slot.name)?.decl.value;
+        const kind = initial === undefined ? undefined : staticKind(initial);
+        const mismatch = kind === undefined ? null : stateMismatch(label, param, slot.name, kind, "starts as");
+        // A literal the input can read losslessly is only worth a warning.
+        const coercible = initial?.type === "literal" && coerceState(param.holds, initial.value) !== undefined;
+        if (mismatch !== null) this.diagnostics.report(slot.pos, mismatch, coercible ? "warning" : "error");
+      }
+      const wanted = LITERAL_KINDS[param.kind];
+      const got = staticKind(slot);
+      if (wanted !== undefined && got !== undefined && got !== wanted && !(got === "null" && (param.optional || param.nullable))) {
+        this.diagnostics.report(slot.pos, `${label} needs ${EXPECTED[param.kind]}, got ${DESCRIPTIONS[got]}`);
+      }
+      if (param.kind === "enum" && slot.type === "literal" && !(slot.value === null && param.optional)) {
+        const values = param.values ?? [];
+        if (typeof slot.value !== "string" || !values.includes(slot.value)) {
+          this.diagnostics.report(slot.pos, `${label} must be one of ${values.join(", ")}; got ${JSON.stringify(slot.value)}`);
+        }
+      }
+      if (param.kind === "actions") {
+        for (const item of slot.type === "list" ? slot.items : [slot]) {
+          let got: string | undefined;
+          if (item.type === "call" && (COMPONENT_SPECS.has(item.name) || FUNCTION_ARITY.has(item.name))) {
+            got = `\`${item.name}(...)\``;
+          } else if (item.type === "literal" && item.value !== null) {
+            got = JSON.stringify(item.value);
+          }
+          if (got !== undefined) {
+            this.diagnostics.report(item.pos, `${label} takes actions: ${ACTION_LIST}; got ${got}`);
+          }
+        }
+      }
+    },
+  },
+);
+type Validator = InstanceType<typeof Validator>;

@@ -7,9 +7,17 @@
 // than its input, so the data loader's size limit bounds the work.
 import { LIMITS } from "./catalog";
 import type { Value } from "./types";
+import { defineClass } from "./define-class";
 
 /** A reason the file is not a readable JUnit report, already phrased for the user. */
-export class JUnitError extends Error {}
+export const JUnitError = defineClass(
+  function (this: Error, message: string): void {
+    this.message = message;
+  },
+  undefined,
+  Error,
+);
+export type JUnitError = InstanceType<typeof JUnitError>;
 
 interface XmlElement {
   readonly name: string;
