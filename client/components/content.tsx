@@ -1,7 +1,7 @@
 import { Icon as PaseoIcon, Modal } from "@getpaseo/plugin/client/react-native";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import React, { useContext, useEffect, useState } from "react";
-import { Image as RNImage, Pressable, StyleSheet, Text as RNText, View } from "react-native";
+import { Image as RNImage, Pressable, StyleSheet, Text as RNText, useWindowDimensions, View } from "react-native";
 import { keyValuePairs } from "../../shared/logic/content-model";
 import { parseListRows } from "../../shared/logic/explain-logic";
 import { resolveIconName } from "../../shared/logic/icons";
@@ -185,6 +185,7 @@ export function LoadedImageView({
   const { theme, loadImage } = useUiRuntime();
   const [state, setState] = useState<ImageUrl | null>(null);
   const [zoomed, setZoomed] = useState(false);
+  const viewport = useWindowDimensions();
 
   useEffect(() => {
     if (!loadImage || !src) return;
@@ -259,7 +260,10 @@ export function LoadedImageView({
       ) : null}
       {zoomed ? (
         <Modal title={alt ?? src} open={zoomed} onOpenChange={setZoomed}>
-          <Modal.Content>{picture(520)}</Modal.Content>
+          <Modal.Content scrollable={false} contentContainerStyle={{ padding: 0 }}>
+            {/* The host owns the modal's size; fill what it gives, less the header and safe areas. */}
+            {picture(Math.max(320, viewport.height - 160))}
+          </Modal.Content>
         </Modal>
       ) : null}
     </View>
