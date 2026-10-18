@@ -2,7 +2,7 @@ import { Icon as PaseoIcon, Modal } from "@getpaseo/plugin/client/react-native";
 import { ImageLightbox } from "./image-lightbox";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import React, { useContext, useEffect, useState } from "react";
-import { Image as RNImage, Pressable, StyleSheet, Text as RNText, View } from "react-native";
+import { Image as RNImage, Platform, Pressable, StyleSheet, Text as RNText, View } from "react-native";
 import { keyValuePairs } from "../../shared/logic/content-model";
 import { parseListRows } from "../../shared/logic/explain-logic";
 import { resolveIconName } from "../../shared/logic/icons";
@@ -275,11 +275,12 @@ export function File({ props }: { props: Props }) {
   const line = finiteNumber(props.line);
   const label = line !== null ? `${filePath}:${Math.round(line)}` : filePath;
 
-  return (
+  const onWeb = Platform.OS === "web";
+  const chip = (
     <Pressable
       accessibilityRole="button"
       onPress={() => {
-        if (openFile) void openFile(filePath, line ?? undefined);
+        if (!onWeb && openFile) void openFile(filePath, line ?? undefined);
       }}
       style={{
         alignSelf: "flex-start",
@@ -299,6 +300,23 @@ export function File({ props }: { props: Props }) {
         {label}
       </RNText>
     </Pressable>
+  );
+  if (!onWeb) return chip;
+
+  // Paseo renders chat file links as `<a style="display: contents">`. Plugins such as
+  // wiki-viewer catch clicks on those and replay the click when they decline, so the
+  // anchor's own handler is the fallback that opens a Paseo file tab.
+  return React.createElement(
+    "a",
+    {
+      href: label,
+      style: { display: "contents" },
+      onClick: (event: { preventDefault(): void }) => {
+        event.preventDefault();
+        if (openFile) void openFile(filePath, line ?? undefined);
+      },
+    },
+    chip,
   );
 }
 
