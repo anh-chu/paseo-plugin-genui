@@ -18,7 +18,7 @@ import { useAudioLoader, useImageLoader, useLoadedData, useTextLoader, type File
 import { MarkdownText } from "./markdown";
 import { RenderNodes } from "./render";
 import { UiRuntimeContext, type UiRuntime } from "./runtime";
-import { canRenderWebIframe, mountSandboxedAppIframe, readStorage, writeStorage } from "./web";
+import { canRenderWebIframe, mountSandboxedAppIframe, openWorkspaceFile, readStorage, writeStorage } from "./web";
 
 function readStoredValues(storageKey: string): Record<string, Value> {
   const raw = readStorage(storageKey);
@@ -506,7 +506,7 @@ export function TimelineBlockItem({
       stateKey={stateKey}
       scope={{ agentId }}
       send={send}
-      openFile={null}
+      openFile={layout.platform === "web" ? openWorkspaceFile : null}
       playAudio={playAudio}
       theme={theme}
       compact={layout.compact}

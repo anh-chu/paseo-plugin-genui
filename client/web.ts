@@ -41,7 +41,11 @@ interface WebGlobal {
   readonly window?: {
     addEventListener(type: "message", listener: (event: WebMessageEvent) => void): void;
     removeEventListener(type: "message", listener: (event: WebMessageEvent) => void): void;
+    readonly location?: { readonly pathname: string };
+    readonly history?: { pushState(state: null, unused: string, url: string): void };
+    dispatchEvent?(event: unknown): boolean;
   };
+  readonly PopStateEvent?: new (type: "popstate") => unknown;
 }
 
 const memoryStore = new Map<string, string>();
@@ -183,4 +187,22 @@ export function mountSandboxedAppIframe(
     web.window?.removeEventListener("message", onMessage);
     iframe.remove();
   };
+}
+
+/**
+ * Opens an absolute file path in a file tab of the workspace on screen, the way the
+ * host does for file links in chat. The plugin SDK has no call for it, so this goes
+ * through the host's `?open=file:<base64url path>` route. Web and desktop only.
+ */
+export function openWorkspaceFile(path: string): boolean {
+  const web = getWeb();
+  const win = web?.window;
+  if (!win?.location || !win.history || !win.dispatchEvent || !web?.PopStateEvent) return false;
+  if (!path.startsWith("/")) return false;
+  const match = /^\/h\/[^/]+\/workspace\/[^/]+/.exec(win.location.pathname);
+  if (match === null) return false;
+  const token = btoa(unescape(encodeURIComponent(path))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  win.history.pushState(null, "", `${match[0]}?open=${encodeURIComponent(`file:${token}`)}`);
+  win.dispatchEvent(new web.PopStateEvent("popstate"));
+  return true;
 }
