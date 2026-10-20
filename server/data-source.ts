@@ -3,9 +3,11 @@ import { mkdir, open, readdir, readFile, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { collectLoads, compile, parseDataFile, type LoadedData } from "../shared/core";
 import { COMPONENTS, componentSignature, type ComponentName } from "../shared/core/catalog";
+
+type PaseoApi = PluginHandlerContext["paseo"];
 
 export const MAX_DATA_BYTES = 2 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;

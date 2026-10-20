@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type {
   EnvironmentDetail,
   EnvironmentDetailResult,
@@ -33,6 +33,8 @@ import {
 } from "../shared/core/project";
 import { lastMessage } from "../shared/core/thread-activity";
 import { resolveAgentCwd } from "./data-source";
+
+type PaseoApi = PluginHandlerContext["paseo"];
 
 const execFileAsync = promisify(execFile);
 
