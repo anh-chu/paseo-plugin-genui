@@ -691,6 +691,8 @@ export const METHODS = {
     "slice",
     "includes",
     "indexOf",
+    "concat",
+    "sort",
   ],
   string: [
     "includes",

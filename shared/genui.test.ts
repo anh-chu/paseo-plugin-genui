@@ -45,6 +45,21 @@ describe("paseo-plugin-genui core, instructions, and gallery", () => {
     }
   });
 
+  it("supports .concat() and .sort() on lists", () => {
+    const compiled = compile(
+      [
+        "a = [{n: \"x\", v: 3}, {n: \"y\", v: 1}]",
+        "all = a.concat([{n: \"z\", v: 2}])",
+        "Text(all.sort((p, q) => q.v - p.v).map(p => p.n).join(\",\"))",
+        "Text([10, 9, 1].sort().join(\",\"))",
+        "Text(a.map(p => p.n).join(\",\"))",
+      ].join("\n"),
+    );
+    expect(compiled.diagnostics).toEqual([]);
+    const { roots } = evaluate(compiled.program!, initialState(compiled.program!));
+    expect(roots.map((root) => root.props.text)).toEqual(["x,z,y", "1,9,10", "x,y"]);
+  });
+
   it("covers all 86 catalog components in the gallery and compiles + evaluates every gallery spec", async () => {
     const files = await listGallery();
     expect(files.length).toBeGreaterThanOrEqual(170);

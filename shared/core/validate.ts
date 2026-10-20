@@ -31,7 +31,7 @@ type Arity = readonly [min: number, max: number];
 const METHOD_ARITY: ReadonlyMap<string, Arity> = new Map(
   Object.entries({
     map: [1, 1], filter: [1, 1], find: [1, 1], some: [1, 1], every: [1, 1],
-    join: [0, 1], slice: [0, 2], includes: [1, 1], indexOf: [1, 1],
+    join: [0, 1], slice: [0, 2], includes: [1, 1], indexOf: [1, 1], concat: [1, Infinity], sort: [0, 1],
     split: [1, 1], trim: [0, 0], toUpperCase: [0, 0], toLowerCase: [0, 0],
     startsWith: [1, 1], endsWith: [1, 1], toFixed: [0, 1],
   } satisfies Record<MethodName, Arity>),
@@ -46,7 +46,7 @@ const FUNCTION_ARITY: ReadonlyMap<string, Arity> = new Map(
 
 const ACTION_LIST = [...ACTION_SPECS].map(([name, spec]) => signature(name, spec)).join(", ");
 const ARROW_ONLY =
-  "arrow functions can only be declared as a named function (`share = p => ...`) or passed to map, filter, find, some or every";
+  "arrow functions can only be declared as a named function (`share = p => ...`) or passed to map, filter, find, some, every or sort";
 
 /** The type of a value, as named in diagnostics. */
 export type Kind = "null" | "boolean" | "number" | "string" | "list" | "object" | "node" | "action" | "binding";
@@ -432,13 +432,16 @@ const Validator = defineClass(
         this.diagnostics.report(expr.pos, `\`.${expr.name}()\` takes ${arityText(arity)}`);
       }
       const [first, ...rest] = expr.args;
-      if (LAMBDA_METHODS.has(expr.name) && first !== undefined) {
+      const sort = expr.name === "sort";
+      if ((LAMBDA_METHODS.has(expr.name) || sort) && first !== undefined) {
         if (first.type !== "arrow") {
-          this.diagnostics.report(first.pos, `\`.${expr.name}()\` takes a function, as in \`x => x.price\``);
+          const example = sort ? "(a, b) => a.price - b.price" : "x => x.price";
+          this.diagnostics.report(first.pos, `\`.${expr.name}()\` takes a function, as in \`${example}\``);
           this.check(first, params, refs);
         } else {
           if (first.params.length > 2) {
-            this.diagnostics.report(first.pos, `\`.${expr.name}()\` passes (item, index); use at most 2 parameters`);
+            const passes = sort ? "(a, b)" : "(item, index)";
+            this.diagnostics.report(first.pos, `\`.${expr.name}()\` passes ${passes}; use at most 2 parameters`);
           }
           this.check(first.body, [...params, ...first.params], refs);
         }

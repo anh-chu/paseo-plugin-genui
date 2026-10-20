@@ -287,7 +287,7 @@ const Interpreter = defineClass(
         case "arrow":
           throw new RuntimeError(
             expr.pos,
-            "arrow functions can only be declared as a named function (`share = p => ...`) or passed to map, filter, find, some or every",
+            "arrow functions can only be declared as a named function (`share = p => ...`) or passed to map, filter, find, some, every or sort",
           );
       }
     },
@@ -653,6 +653,7 @@ const Interpreter = defineClass(
     method(call: Extract<Expr, { type: "method" }>, scope: Scope | null): Value {
       const receiver = this.expr(call.object, scope);
       if (isList(receiver) && LAMBDA_METHODS.has(call.name)) return this.lambdaMethod(receiver, call, scope);
+      if (isList(receiver) && call.name === "sort") return this.sort(receiver, call, scope);
       const args = call.args.map((arg) => this.expr(arg, scope));
       const label = `.${call.name}()`;
       const textAt = (index: number) => this.text(args[index], call.args[index].pos, label);
@@ -670,6 +671,8 @@ const Interpreter = defineClass(
             return receiver.includes(args[0]);
           case "indexOf":
             return receiver.indexOf(args[0]);
+          case "concat":
+            return checkLength(receiver.concat(...args), call.pos);
         }
       } else if (typeof receiver === "string") {
         switch (call.name) {
@@ -695,6 +698,25 @@ const Interpreter = defineClass(
         return roundTo(receiver, digits).toFixed(digits);
       }
       throw new RuntimeError(call.pos, `\`${label}\` is not available on ${describe(receiver)}`);
+    },
+
+    /** A sorted copy; without a comparator, numbers sort numerically and anything else as text. */
+    sort(list: readonly Value[], call: Extract<Expr, { type: "method" }>, scope: Scope | null): Value {
+      checkLength(list, call.pos);
+      const fn = call.args[0];
+      if (fn === undefined) {
+        return [...list].sort((a, b) =>
+          typeof a === "number" && typeof b === "number" ? a - b : toText(a, call.pos).localeCompare(toText(b, call.pos)),
+        );
+      }
+      if (fn.type !== "arrow") throw new RuntimeError(call.pos, "`.sort()` takes a function, as in `(a, b) => a.price - b.price`");
+      const [aName, bName] = fn.params;
+      return [...list].sort((a, b) => {
+        let inner = scope;
+        if (aName !== undefined) inner = { name: aName, value: a, parent: inner };
+        if (bName !== undefined) inner = { name: bName, value: b, parent: inner };
+        return this.number(this.expr(fn.body, inner), fn.body.pos, ".sort()");
+      });
     },
 
     lambdaMethod(list: readonly Value[], call: Extract<Expr, { type: "method" }>, scope: Scope | null): Value {
