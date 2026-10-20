@@ -60,6 +60,15 @@ describe("paseo-plugin-genui core, instructions, and gallery", () => {
     expect(roots.map((root) => root.props.text)).toEqual(["x,z,y", "1,9,10", "x,y"]);
   });
 
+  it("renders a bare Send, OpenUrl or Copy among children as a Button", () => {
+    const compiled = compile('Card("x", [Text("a"), OpenUrl("https://docs.google.com/x"), Send("Go"), Copy("id")])');
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const { roots, diagnostics } = evaluate(compiled.program!, initialState(compiled.program!));
+    expect(diagnostics).toEqual([]);
+    const buttons = (roots[0]!.props.children as { type: string; props: { label: string } }[]).filter((c) => c.type === "Button");
+    expect(buttons.map((b) => b.props.label)).toEqual(["Open docs.google.com", "Go", "Copy"]);
+  });
+
   it("covers all 86 catalog components in the gallery and compiles + evaluates every gallery spec", async () => {
     const files = await listGallery();
     expect(files.length).toBeGreaterThanOrEqual(170);

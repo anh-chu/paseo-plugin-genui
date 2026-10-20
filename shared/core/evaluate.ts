@@ -519,6 +519,10 @@ const Interpreter = defineClass(
           for (const child of item) visit(child);
         } else if (isNode(item)) {
           out.push(item);
+        } else if (isAction(item) && item.type !== "set") {
+          // A bare action where a component belongs: render it as the Button the agent meant.
+          const text = item.type === "openUrl" ? `Open ${new URL(item.url).host}` : item.type === "copy" ? "Copy" : item.text;
+          out.push(this.node("Button", `${key}.${out.length}`, { label: text, action: [item], variant: null, icon: null }, pos));
         } else {
           throw new RuntimeError(pos, `${label} must be components or text, got ${describe(item)}`);
         }
