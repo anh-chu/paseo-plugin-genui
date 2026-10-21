@@ -33,7 +33,7 @@ const METHOD_ARITY: ReadonlyMap<string, Arity> = new Map(
     map: [1, 1], filter: [1, 1], find: [1, 1], some: [1, 1], every: [1, 1],
     join: [0, 1], slice: [0, 2], includes: [1, 1], indexOf: [1, 1], concat: [1, Infinity], sort: [0, 1],
     split: [1, 1], trim: [0, 0], toUpperCase: [0, 0], toLowerCase: [0, 0],
-    startsWith: [1, 1], endsWith: [1, 1], toFixed: [0, 1],
+    startsWith: [1, 1], endsWith: [1, 1], replace: [2, 2], replaceAll: [2, 2], toFixed: [0, 1],
   } satisfies Record<MethodName, Arity>),
 );
 

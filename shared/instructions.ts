@@ -24,7 +24,7 @@ export const REFERENCE_MORE_GROUPS: readonly ComponentGroup[] = ["Inputs", "Widg
 
 export const UI_REFERENCE = `# Inline UI reference
 The \`\`\`ui language used by the Inline UI section below.
-Syntax: one statement per line. \`$x = 8\` is state inputs bind to; \`name = expr\` names a value and \`f = (a, b) => expr\` a function; each bare expression renders. JS expressions incl. ** ?: ?? \`\${x}\` [lists] {objects} x.y map/filter/find/sort/concat/join/length, plus round(x, d), fmt(x, d), sum, min, max, abs, entries, Load(path). Named args go last: Slider($n, 0, 10, label: "N").
+Syntax: one statement per line. \`$x = 8\` is state inputs bind to; \`name = expr\` names a value and \`f = (a, b) => expr\` a function; each bare expression renders. JS expressions incl. ** ?: ?? \`\${x}\` [lists] {objects} x.y map/filter/find/sort/concat/join/replace/length, plus round(x, d), fmt(x, d), sum, min, max, abs, entries, Load(path). Named args go last: Slider($n, 0, 10, label: "N").
 Components (? optional; tone: neutral|good|warn|bad|info if meaningful; more in the next section):
 ${componentLines(REFERENCE_GROUPS)}
 Actions: ${actionList}; a list runs in order; Send posts as the user.

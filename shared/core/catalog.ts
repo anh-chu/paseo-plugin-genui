@@ -703,6 +703,8 @@ export const METHODS = {
     "toLowerCase",
     "startsWith",
     "endsWith",
+    "replace",
+    "replaceAll",
   ],
   number: ["toFixed"],
 } as const;

@@ -69,6 +69,18 @@ describe("paseo-plugin-genui core, instructions, and gallery", () => {
     expect(buttons.map((b) => b.props.label)).toEqual(["Open docs.google.com", "Go", "Copy"]);
   });
 
+  it("supports .replace() and .replaceAll() on text", () => {
+    const compiled = compile(
+      [
+        "Text(\"katalon-studio/a-b-b\".replace(\"katalon-studio/\", \"\").replaceAll(\"-\", \" \"))",
+        "Text(\"a.b\".replace(\".\", \"$&!\"))",
+      ].join("\n"),
+    );
+    expect(compiled.diagnostics).toEqual([]);
+    const { roots } = evaluate(compiled.program!, initialState(compiled.program!));
+    expect(roots.map((root) => root.props.text)).toEqual(["a b b", "a$&!b"]);
+  });
+
   it("covers all 86 catalog components in the gallery and compiles + evaluates every gallery spec", async () => {
     const files = await listGallery();
     expect(files.length).toBeGreaterThanOrEqual(170);

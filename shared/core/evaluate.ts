@@ -696,6 +696,11 @@ const Interpreter = defineClass(
             return receiver.toUpperCase();
           case "toLowerCase":
             return receiver.toLowerCase();
+          // A function replacement keeps `$&` and similar patterns literal.
+          case "replace":
+            return checkString(receiver.replace(textAt(0), () => textAt(1)), call.pos);
+          case "replaceAll":
+            return checkString(receiver.replaceAll(textAt(0), () => textAt(1)), call.pos);
         }
       } else if (typeof receiver === "number" && call.name === "toFixed") {
         const digits = args.length > 0 ? this.digits(args[0], call.args[0].pos, label) : 0;
