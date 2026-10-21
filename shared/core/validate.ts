@@ -1,4 +1,4 @@
-import type { CallExpr, Decl, Expr, Program, Statement } from "./ast";
+import type { ArrowExpr, CallExpr, Decl, Expr, Program, Statement } from "./ast";
 import {
   ACTIONS,
   COMPONENTS,
@@ -24,7 +24,25 @@ export const ACTION_SPECS: ReadonlyMap<string, ComponentSpec> = new Map(Object.e
 type MethodName = (typeof METHODS)[keyof typeof METHODS][number];
 
 /** Methods whose single argument is an arrow `(item, index?) => ...`. */
-export const LAMBDA_METHODS: ReadonlySet<string> = new Set(["map", "filter", "find", "some", "every"]);
+export const LAMBDA_METHODS: ReadonlySet<string> = new Set(["map", "filter", "find", "some", "every", "findIndex", "flatMap"]);
+
+/** What a method's function receives, for those that take one. */
+export const FUNCTION_PARAMS: ReadonlyMap<string, readonly string[]> = new Map([
+  ...[...LAMBDA_METHODS].map((name): [string, readonly string[]] => [name, ["item", "index"]]),
+  ["sort", ["a", "b"]],
+  ["reduce", ["total", "item", "index"]],
+]);
+
+/** A method's function argument; a declared function's name, as in `rows.map(row)`, becomes `(a, b) => row(a, b)`. */
+export function functionArg(arg: Expr, named: ReadonlyMap<string, Decl>, method: string, params: readonly string[] = []): Expr {
+  if (arg.type !== "ident" || params.includes(arg.name)) return arg;
+  const own = named.get(arg.name)?.value;
+  if (own?.type !== "arrow") return arg;
+  // `#` cannot appear in a written name, so these never shadow anything.
+  const names = own.params.slice(0, FUNCTION_PARAMS.get(method)?.length ?? 2).map((_, index) => `#${index}`);
+  const args = names.map((name): Expr => ({ type: "ident", name, pos: arg.pos }));
+  return { type: "arrow", params: names, body: { type: "call", name: arg.name, args, named: [], pos: arg.pos }, pos: arg.pos } satisfies ArrowExpr;
+}
 
 type Arity = readonly [min: number, max: number];
 
@@ -32,8 +50,11 @@ const METHOD_ARITY: ReadonlyMap<string, Arity> = new Map(
   Object.entries({
     map: [1, 1], filter: [1, 1], find: [1, 1], some: [1, 1], every: [1, 1],
     join: [0, 1], slice: [0, 2], includes: [1, 1], indexOf: [1, 1], concat: [1, Infinity], sort: [0, 1],
+    reduce: [1, 2], flatMap: [1, 1], flat: [0, 1], at: [1, 1], findIndex: [1, 1], lastIndexOf: [1, 1], reverse: [0, 0],
     split: [1, 1], trim: [0, 0], toUpperCase: [0, 0], toLowerCase: [0, 0],
-    startsWith: [1, 1], endsWith: [1, 1], replace: [2, 2], replaceAll: [2, 2], toFixed: [0, 1],
+    startsWith: [1, 1], endsWith: [1, 1], replace: [2, 2], replaceAll: [2, 2],
+    charAt: [1, 1], substring: [1, 2], padStart: [1, 2], padEnd: [1, 2], repeat: [1, 1], trimStart: [0, 0], trimEnd: [0, 0],
+    toFixed: [0, 1], toLocaleString: [0, 0], toString: [0, 1],
   } satisfies Record<MethodName, Arity>),
 );
 
@@ -41,12 +62,13 @@ const FUNCTION_ARITY: ReadonlyMap<string, Arity> = new Map(
   Object.entries({
     round: [1, 2], fmt: [1, 2], sum: [1, 1], min: [1, Infinity], max: [1, Infinity], abs: [1, 1], Load: [1, 1],
     keys: [1, 1], values: [1, 1], entries: [1, 1], floor: [1, 1], ceil: [1, 1], sqrt: [1, 1], pow: [2, 2],
+    Number: [1, 1], String: [1, 1], parseInt: [1, 2], parseFloat: [1, 1], "JSON.stringify": [1, 3], "Date.now": [0, 0],
   } satisfies Record<FunctionName, Arity>),
 );
 
 const ACTION_LIST = [...ACTION_SPECS].map(([name, spec]) => signature(name, spec)).join(", ");
 const ARROW_ONLY =
-  "arrow functions can only be declared as a named function (`share = p => ...`) or passed to map, filter, find, some, every or sort";
+  "arrow functions can only be declared as a named function (`share = p => ...`) or passed to a list method such as map, filter, reduce or sort";
 
 /** The type of a value, as named in diagnostics. */
 export type Kind = "null" | "boolean" | "number" | "string" | "list" | "object" | "node" | "action" | "binding";
@@ -134,6 +156,10 @@ function signature(name: string, spec: ComponentSpec): string {
     (param) => `${param.kind === "binding" ? "$" : ""}${param.name}${param.optional ? "?" : ""}`,
   );
   return `${name}(${params.join(", ")})`;
+}
+
+function isSpread(arg: Expr): boolean {
+  return arg.type === "spread";
 }
 
 function arityText([min, max]: Arity): string {
@@ -366,9 +392,17 @@ const Validator = defineClass(
           return;
         case "object":
           for (const entry of expr.entries) {
-            this.forbidden(entry.key, entry.pos);
+            if (typeof entry.key === "string") this.forbidden(entry.key, entry.pos);
+            else if (entry.key !== null) this.check(entry.key, params, refs);
             this.check(entry.value, params, refs);
           }
+          return;
+        case "spread":
+          this.check(expr.value, params, refs);
+          return;
+        case "let":
+          this.check(expr.value, params, refs);
+          this.check(expr.body, [...params, expr.name], refs);
           return;
         case "unary":
           this.check(expr.operand, params, refs);
@@ -428,20 +462,24 @@ const Validator = defineClass(
           expr.pos,
           `\`.${expr.name}()\` is not an allowed method.${hint} Lists: ${METHODS.list.join(", ")}. Text: ${METHODS.string.join(", ")}. Numbers: ${METHODS.number.join(", ")}.`,
         );
-      } else if (expr.args.length < arity[0] || expr.args.length > arity[1]) {
+      } else if (!expr.args.some(isSpread) && (expr.args.length < arity[0] || expr.args.length > arity[1])) {
         this.diagnostics.report(expr.pos, `\`.${expr.name}()\` takes ${arityText(arity)}`);
       }
-      const [first, ...rest] = expr.args;
-      const sort = expr.name === "sort";
-      if ((LAMBDA_METHODS.has(expr.name) || sort) && first !== undefined) {
+      const [written, ...rest] = expr.args;
+      const passes = FUNCTION_PARAMS.get(expr.name);
+      const first = written !== undefined && passes !== undefined ? functionArg(written, this.named, expr.name, params) : written;
+      if (passes !== undefined && first !== undefined) {
         if (first.type !== "arrow") {
-          const example = sort ? "(a, b) => a.price - b.price" : "x => x.price";
+          const example =
+            expr.name === "sort" ? "(a, b) => a.price - b.price" : expr.name === "reduce" ? "(total, x) => total + x.price, 0" : "x => x.price";
           this.diagnostics.report(first.pos, `\`.${expr.name}()\` takes a function, as in \`${example}\``);
           this.check(first, params, refs);
         } else {
-          if (first.params.length > 2) {
-            const passes = sort ? "(a, b)" : "(item, index)";
-            this.diagnostics.report(first.pos, `\`.${expr.name}()\` passes ${passes}; use at most 2 parameters`);
+          if (first.params.length > passes.length) {
+            this.diagnostics.report(
+              first.pos,
+              `\`.${expr.name}()\` passes (${passes.join(", ")}); use at most ${passes.length} parameters`,
+            );
           }
           this.check(first.body, [...params, ...first.params], refs);
         }
@@ -460,7 +498,7 @@ const Validator = defineClass(
         if (expr.named.length > 0) {
           this.diagnostics.report(expr.named[0].pos, `\`${expr.name}\` takes positional arguments only`);
         }
-        if (expr.args.length > own.params.length) {
+        if (!expr.args.some(isSpread) && expr.args.length > own.params.length) {
           const count = own.params.length;
           this.diagnostics.report(expr.pos, `\`${expr.name}\` takes ${count} argument${count === 1 ? "" : "s"}`);
         }
@@ -473,7 +511,7 @@ const Validator = defineClass(
           if (expr.named.length > 0) {
             this.diagnostics.report(expr.named[0].pos, `\`${expr.name}\` takes positional arguments only`);
           }
-          if (expr.args.length < arity[0] || expr.args.length > arity[1]) {
+          if (!expr.args.some(isSpread) && (expr.args.length < arity[0] || expr.args.length > arity[1])) {
             this.diagnostics.report(expr.pos, `\`${expr.name}\` takes ${arityText(arity)}: ${FUNCTIONS[expr.name as FunctionName]}`);
           } else if (expr.name === "Load") {
             this.literalPath(expr.args[0], "Load");
@@ -516,6 +554,9 @@ const Validator = defineClass(
     /** Maps arguments onto catalog params and checks what is knowable before evaluation. */
     catalogCall(expr: CallExpr, spec: ComponentSpec): void {
       const sig = signature(expr.name, spec);
+      for (const arg of expr.args.filter(isSpread)) {
+        this.diagnostics.report(arg.pos, `\`...\` cannot spread into ${expr.name}; pass the list or object itself`);
+      }
       const slots: (Expr | undefined)[] = spec.params.map((_, index) => expr.args[index]);
       if (expr.args.length > spec.params.length) {
         this.diagnostics.report(expr.args[spec.params.length].pos, `too many arguments: ${sig}`);

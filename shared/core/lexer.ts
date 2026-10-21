@@ -17,8 +17,8 @@ export type Token =
   | (Pos & { readonly t: "eof" });
 
 const PUNCTUATION = [
-  "===", "!==",
-  "==", "!=", "<=", ">=", "&&", "||", "??", "=>", "**",
+  "===", "!==", "...",
+  "?.", "==", "!=", "<=", ">=", "&&", "||", "??", "=>", "**",
   "(", ")", "[", "]", "{", "}", ",", ":", ".", "?", "<", ">", "+", "-", "*", "/", "%", "!", "=",
 ];
 
@@ -28,7 +28,7 @@ const CONTINUES_AFTER: Record<string, true> = {
   "==": true, "!=": true, "===": true, "!==": true,
   "<": true, "<=": true, ">": true, ">=": true,
   "&&": true, "||": true, "??": true, "?": true, ":": true,
-  ".": true, "=": true, "=>": true,
+  ".": true, "?.": true, "=": true, "=>": true,
 };
 
 /** A line starting with one of these continues the previous line (none can start an expression). */
@@ -37,7 +37,7 @@ const CONTINUES_BEFORE: Record<string, true> = {
   "==": true, "!=": true, "===": true, "!==": true,
   "<": true, "<=": true, ">": true, ">=": true,
   "&&": true, "||": true, "??": true, "?": true, ":": true,
-  ".": true, "=>": true,
+  ".": true, "?.": true, "=>": true,
 };
 
 const NUMBER = /\d(?:_?\d)*(?:\.\d(?:_?\d)*)?(?:[eE][+-]?\d+)?/y;

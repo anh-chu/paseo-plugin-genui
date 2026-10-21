@@ -674,6 +674,12 @@ export const FUNCTIONS = {
   keys: "keys(object) → list of keys",
   values: "values(object) → list of values",
   entries: "entries(object) → list of [key, value]",
+  Number: "Number(x) → a number, or null for text that is not one",
+  String: "String(x) → text",
+  parseInt: "parseInt(text, radix?) → a whole number, or null",
+  parseFloat: "parseFloat(text) → a number, or null",
+  "JSON.stringify": "JSON.stringify(value, null?, indent?) → JSON text",
+  "Date.now": "Date.now() → milliseconds since 1970",
   Load: "Load(path): JSON/CSV/TSV/JSONL/text file, workspace-relative or in thread storage",
 } as const;
 
@@ -693,6 +699,13 @@ export const METHODS = {
     "indexOf",
     "concat",
     "sort",
+    "reduce",
+    "flatMap",
+    "flat",
+    "at",
+    "findIndex",
+    "lastIndexOf",
+    "reverse",
   ],
   string: [
     "includes",
@@ -705,8 +718,19 @@ export const METHODS = {
     "endsWith",
     "replace",
     "replaceAll",
+    "indexOf",
+    "lastIndexOf",
+    "at",
+    "charAt",
+    "substring",
+    "padStart",
+    "padEnd",
+    "repeat",
+    "trimStart",
+    "trimEnd",
+    "toString",
   ],
-  number: ["toFixed"],
+  number: ["toFixed", "toLocaleString", "toString"],
 } as const;
 
 /** Read-only properties allowed on lists and strings (plain objects allow any own key). */

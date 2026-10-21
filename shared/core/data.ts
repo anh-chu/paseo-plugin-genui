@@ -47,7 +47,17 @@ export function collectLoads(program: Program): DataRequest[] {
         expr.items.forEach(visit);
         return;
       case "object":
-        for (const entry of expr.entries) visit(entry.value);
+        for (const entry of expr.entries) {
+          if (entry.key !== null && typeof entry.key !== "string") visit(entry.key);
+          visit(entry.value);
+        }
+        return;
+      case "spread":
+        visit(expr.value);
+        return;
+      case "let":
+        visit(expr.value);
+        visit(expr.body);
         return;
       case "unary":
         visit(expr.operand);

@@ -8,12 +8,35 @@ const PRECEDENCE: Record<string, number> = {
   "||": 2,
   "&&": 3,
   "==": 4, "!=": 4, "===": 4, "!==": 4,
-  "<": 5, "<=": 5, ">": 5, ">=": 5,
+  "<": 5, "<=": 5, ">": 5, ">=": 5, in: 5,
   "+": 6, "-": 6,
   "*": 7, "/": 7, "%": 7,
 };
 
 const KEYWORDS: Record<string, true | false | null> = { true: true, false: false, null: null };
+
+/**
+ * `Math.round(x)` and `Object.entries(o)` are how models write the built-ins;
+ * they parse as the plain calls `round(x)` and `entries(o)`. `JSON.stringify`
+ * and `Date.now` keep their dotted names, which no written name can shadow.
+ */
+const NAMESPACES: Record<string, string> = { Math: "", Object: "", JSON: "JSON.", Date: "Date." };
+
+const BLOCK_WORDS: Record<string, true> = { return: true, const: true, let: true, var: true };
+
+/** A parameter or `const` target: a name, or `{a, b: c}` / `[a, b]` destructuring with optional `= fallback`s. */
+type Pattern =
+  | { readonly kind: "name"; readonly name: string; readonly pos: Pos }
+  | {
+      readonly kind: "object";
+      readonly props: readonly { readonly key: string; readonly target: Pattern; readonly fallback: Expr | null }[];
+      readonly pos: Pos;
+    }
+  | {
+      readonly kind: "array";
+      readonly items: readonly ({ readonly target: Pattern; readonly fallback: Expr | null } | null)[];
+      readonly pos: Pos;
+    };
 
 /** AST depth beyond this is rejected so later tree walks cannot overflow the stack. */
 const MAX_NESTING = 100;
@@ -76,6 +99,8 @@ interface ParserFields {
   i: number;
   tokens: readonly Token[];
   depth: number;
+  /** Counter for the names destructuring binds its intermediate values to. */
+  hidden: number;
 }
 
 const Parser = defineClass(
@@ -83,6 +108,7 @@ const Parser = defineClass(
     this.tokens = tokens;
     this.depth = depth;
     this.i = 0;
+    this.hidden = 0;
   },
   {
     peek(offset = 0): Token {
@@ -154,32 +180,142 @@ const Parser = defineClass(
       return expr;
     },
 
+    /** `x =>`, or a bracketed group followed by `=>`. */
     isArrowStart(): boolean {
       if (this.peek().t === "ident") return this.isPunct("=>", 1);
       if (!this.isPunct("(")) return false;
-      let offset = 1;
-      if (this.peek(offset).t === "ident") {
-        offset++;
-        while (this.isPunct(",", offset) && this.peek(offset + 1).t === "ident") offset += 2;
+      let depth = 0;
+      for (let offset = 0; ; offset++) {
+        const token = this.peek(offset);
+        if (token.t === "eof" || token.t === "sep") return false;
+        if (token.t !== "punct") continue;
+        if (token.value === "(" || token.value === "[" || token.value === "{") depth++;
+        if ((token.value === ")" || token.value === "]" || token.value === "}") && --depth === 0) {
+          return this.isPunct("=>", offset + 1);
+        }
       }
-      return this.isPunct(")", offset) && this.isPunct("=>", offset + 1);
     },
 
     arrow(): Expr {
       const start = this.peek();
-      const params: string[] = [];
+      const patterns: Pattern[] = [];
       if (this.eat("(")) {
         while (!this.eat(")")) {
-          params.push(this.ident("a parameter name").value);
-          this.eat(",");
+          patterns.push(this.pattern());
+          if (!this.eat(",")) {
+            this.close(")", start, "`,` or ");
+            break;
+          }
         }
       } else {
-        params.push(this.ident("a parameter name").value);
+        patterns.push(this.pattern());
       }
-      const keyword = params.find((name) => Object.hasOwn(KEYWORDS, name));
-      if (keyword !== undefined) throw new ParseError(start, `\`${keyword}\` cannot be a parameter name`);
       this.i++; // `=>`, guaranteed by isArrowStart
-      return { type: "arrow", params, body: this.expr(), pos: start };
+      let body = this.isBlockStart() ? this.block() : this.expr();
+      const params = patterns.map((pattern, index) => (pattern.kind === "name" ? pattern.name : `#p${index}`));
+      for (let index = patterns.length - 1; index >= 0; index--) {
+        if (patterns[index].kind !== "name") body = this.bind(patterns[index], { type: "ident", name: params[index], pos: start }, body);
+      }
+      return { type: "arrow", params, body, pos: start };
+    },
+
+    pattern(): Pattern {
+      const open = this.peek();
+      if (this.eat("{")) {
+        const props: { key: string; target: Pattern; fallback: Expr | null }[] = [];
+        while (!this.eat("}")) {
+          const key = this.peek();
+          if (key.t !== "ident" && key.t !== "str") {
+            throw new ParseError(key, `expected a property name to destructure, found ${describe(key)}`);
+          }
+          this.i++;
+          const target: Pattern = this.eat(":") ? this.pattern() : this.patternName(key);
+          props.push({ key: key.value, target, fallback: this.eat("=") ? this.expr() : null });
+          if (!this.eat(",")) {
+            this.close("}", open, "`,` or ");
+            break;
+          }
+        }
+        return { kind: "object", props, pos: open };
+      }
+      if (this.eat("[")) {
+        const items: ({ target: Pattern; fallback: Expr | null } | null)[] = [];
+        while (!this.eat("]")) {
+          if (this.eat(",")) {
+            items.push(null);
+            continue;
+          }
+          const target = this.pattern();
+          items.push({ target, fallback: this.eat("=") ? this.expr() : null });
+          if (!this.eat(",")) {
+            this.close("]", open, "`,` or ");
+            break;
+          }
+        }
+        return { kind: "array", items, pos: open };
+      }
+      return this.patternName(this.ident("a parameter name"));
+    },
+
+    patternName(token: Pos & { readonly value: string }): Pattern {
+      if (Object.hasOwn(KEYWORDS, token.value) || Object.hasOwn(BLOCK_WORDS, token.value)) {
+        throw new ParseError(token, `\`${token.value}\` cannot be a parameter name`);
+      }
+      return { kind: "name", name: token.value, pos: token };
+    },
+
+    /** `body` with `pattern`'s names bound from `source`; a missing value is null, or its fallback. */
+    bind(pattern: Pattern, source: Expr, body: Expr): Expr {
+      if (pattern.kind === "name") return { type: "let", name: pattern.name, value: source, body, pos: pattern.pos };
+      const holder = `#d${this.hidden++}`;
+      const from: Expr = { type: "ident", name: holder, pos: pattern.pos };
+      const parts =
+        pattern.kind === "object"
+          ? pattern.props.map((prop) => ({ ...prop, key: prop.key as string | number }))
+          : pattern.items.flatMap((item, index) => (item === null ? [] : [{ ...item, key: index as string | number }]));
+      let inner = body;
+      for (let index = parts.length - 1; index >= 0; index--) {
+        const { key, target, fallback } = parts[index];
+        let value: Expr = { type: "index", object: from, index: { type: "literal", value: key, pos: pattern.pos }, pos: pattern.pos };
+        if (fallback !== null) value = { type: "binary", op: "??", left: value, right: fallback, pos: pattern.pos };
+        inner = this.bind(target, value, inner);
+      }
+      return { type: "let", name: holder, value: source, body: inner, pos: pattern.pos };
+    },
+
+    isBlockStart(): boolean {
+      const next = this.peek(1);
+      // `if` is no block word, but a body starting with it is meant as one; block() explains what is allowed.
+      return this.isPunct("{") && next.t === "ident" && (Object.hasOwn(BLOCK_WORDS, next.value) || next.value === "if");
+    },
+
+    /** `{ const a = ...; return ... }`: declarations, then one return. */
+    block(): Expr {
+      const open = this.tokens[this.i++];
+      const decls: { pattern: Pattern; value: Expr }[] = [];
+      for (;;) {
+        while (this.peek().t === "sep") this.i++;
+        const word = this.peek();
+        if (word.t === "ident" && (word.value === "const" || word.value === "let" || word.value === "var")) {
+          this.i++;
+          const pattern = this.pattern();
+          if (!this.eat("=")) throw new ParseError(this.peek(), `expected \`=\` after the \`${word.value}\` name, found ${describe(this.peek())}`);
+          decls.push({ pattern, value: this.expr() });
+          continue;
+        }
+        if (word.t === "ident" && word.value === "return") {
+          this.i++;
+          let body = this.expr();
+          while (this.peek().t === "sep") this.i++;
+          this.close("}", open);
+          for (let index = decls.length - 1; index >= 0; index--) body = this.bind(decls[index].pattern, decls[index].value, body);
+          return body;
+        }
+        throw new ParseError(
+          word,
+          `a \`{ }\` function body holds \`const name = ...\` lines and one \`return ...\`; found ${describe(word)}. Use \`?:\` for conditions`,
+        );
+      }
     },
 
     conditional(): Expr {
@@ -198,13 +334,14 @@ const Parser = defineClass(
       let left = this.unary();
       for (;;) {
         const token = this.peek();
-        if (token.t !== "punct") break;
-        const precedence = PRECEDENCE[token.value];
-        if (precedence === undefined || precedence < minPrecedence) break;
+        const op = token.t === "punct" || (token.t === "ident" && token.value === "in") ? token.value : null;
+        if (op === null || !Object.hasOwn(PRECEDENCE, op)) break;
+        const precedence = PRECEDENCE[op];
+        if (precedence < minPrecedence) break;
         this.nest(token);
         this.i++;
         const right = this.binary(precedence + 1);
-        left = { type: "binary", op: token.value as BinaryOperator, left, right, pos: token };
+        left = { type: "binary", op: op as BinaryOperator, left, right, pos: token };
       }
       this.depth = saved;
       return left;
@@ -213,7 +350,7 @@ const Parser = defineClass(
     unary(): Expr {
       const saved = this.depth;
       const operators: Token[] = [];
-      while (this.isPunct("!") || this.isPunct("-")) {
+      while (this.isPunct("!") || this.isPunct("-") || this.isTypeof()) {
         this.nest(this.peek());
         operators.push(this.tokens[this.i++]);
       }
@@ -228,29 +365,39 @@ const Parser = defineClass(
       }
       for (let k = operators.length - 1; k >= 0; k--) {
         const token = operators[k];
-        expr = { type: "unary", op: token.t === "punct" && token.value === "!" ? "!" : "-", operand: expr, pos: token };
+        const op = token.t === "ident" ? "typeof" : token.t === "punct" && token.value === "!" ? "!" : "-";
+        expr = { type: "unary", op, operand: expr, pos: token };
       }
       this.depth = saved;
       return expr;
     },
 
+    /** `typeof` followed by something that starts an expression. */
+    isTypeof(): boolean {
+      const token = this.peek();
+      if (token.t !== "ident" || token.value !== "typeof") return false;
+      const next = this.peek(1);
+      if (next.t === "punct") return ["(", "[", "{", "!", "-"].includes(next.value);
+      return next.t !== "sep" && next.t !== "eof";
+    },
+
     postfix(): Expr {
       let expr = this.primary();
+      // Reading a property of null gives null already; after a `?.`, so does calling a method on it.
+      let optional = false;
       for (;;) {
-        if (this.isPunct(".") || this.isPunct("[") || this.isPunct("(")) this.nest(this.peek());
-        if (this.eat(".")) {
-          const name = this.ident("a property or method name after `.`");
-          if (this.isPunct("(")) {
-            // `Math.round(x)` and `Object.entries(o)` are how models write the
-            // built-ins; they parse as the plain calls `round(x)` and `entries(o)`.
-            expr =
-              expr.type === "ident" && (expr.name === "Math" || expr.name === "Object")
-                ? { type: "call", name: name.value, ...this.args(), pos: name }
-                : { type: "method", object: expr, name: name.value, ...this.args(), pos: name };
-          } else {
-            expr = { type: "member", object: expr, name: name.value, pos: name };
+        if (this.isPunct(".") || this.isPunct("?.") || this.isPunct("[") || this.isPunct("(")) this.nest(this.peek());
+        if (this.eat("?.")) {
+          optional = true;
+          if (!this.isPunct("[")) {
+            expr = this.property(expr, optional);
+            continue;
           }
-        } else if (this.isPunct("[")) {
+        } else if (this.eat(".")) {
+          expr = this.property(expr, optional);
+          continue;
+        }
+        if (this.isPunct("[")) {
           const open = this.tokens[this.i++];
           const index = this.expr();
           this.close("]", open);
@@ -266,6 +413,23 @@ const Parser = defineClass(
       }
     },
 
+    /** `.name` or `.name(...)` after `object`. */
+    property(object: Expr, optional: boolean): Expr {
+      const name = this.ident("a property or method name after `.`");
+      if (!this.isPunct("(")) return { type: "member", object, name: name.value, pos: name };
+      if (object.type === "ident" && Object.hasOwn(NAMESPACES, object.name)) {
+        return { type: "call", name: NAMESPACES[object.name] + name.value, ...this.args(), pos: name };
+      }
+      return { type: "method", object, name: name.value, ...this.args(), optional, pos: name };
+    },
+
+    /** An expression, or `...expr` where a list item or argument may spread. */
+    item(): Expr {
+      const token = this.peek();
+      if (!this.eat("...")) return this.expr();
+      return { type: "spread", value: this.expr(), pos: token };
+    },
+
     args(): { args: Expr[]; named: NamedArg[] } {
       const open = this.tokens[this.i++];
       const args: Expr[] = [];
@@ -279,7 +443,7 @@ const Parser = defineClass(
           if (named.length > 0) {
             throw new ParseError(token, "positional arguments must come before named ones");
           }
-          args.push(this.expr());
+          args.push(this.item());
         }
         if (!this.eat(",")) {
           this.close(")", open, "`,` or ");
@@ -327,7 +491,7 @@ const Parser = defineClass(
             this.i++;
             const items: Expr[] = [];
             while (!this.eat("]")) {
-              items.push(this.expr());
+              items.push(this.item());
               if (!this.eat(",")) {
                 this.close("]", token, "`,` or ");
                 break;
@@ -343,13 +507,41 @@ const Parser = defineClass(
 
     object(open: Token): Expr {
       this.i++;
-      const entries: { key: string; value: Expr; pos: Pos }[] = [];
+      const entries: { key: string | Expr | null; value: Expr; pos: Pos }[] = [];
       while (!this.eat("}")) {
         const key = this.peek();
+        if (this.eat("...")) {
+          entries.push({ key: null, value: this.expr(), pos: key });
+          if (!this.eat(",")) {
+            this.close("}", open, "`,` or ");
+            break;
+          }
+          continue;
+        }
+        if (this.eat("[")) {
+          const computed = this.expr();
+          this.close("]", key);
+          if (!this.eat(":")) throw new ParseError(this.peek(), `expected \`:\` after the object key, found ${describe(this.peek())}`);
+          entries.push({ key: computed, value: this.expr(), pos: key });
+          if (!this.eat(",")) {
+            this.close("}", open, "`,` or ");
+            break;
+          }
+          continue;
+        }
         if (key.t !== "ident" && key.t !== "str") {
-          throw new ParseError(key, `expected an object key (a name or a string), found ${describe(key)}`);
+          throw new ParseError(key, `expected an object key (a name, a string or [expression]), found ${describe(key)}`);
         }
         this.i++;
+        // `{name}` is `{name: name}`.
+        if (key.t === "ident" && (this.isPunct(",") || this.isPunct("}"))) {
+          entries.push({ key: key.value, value: { type: "ident", name: key.value, pos: key }, pos: key });
+          if (!this.eat(",")) {
+            this.close("}", open, "`,` or ");
+            break;
+          }
+          continue;
+        }
         // `{Good for: …}`: models write labels as bare words; nothing else may follow a key, so read them as one.
         let name = key.value;
         if (key.t === "ident") {

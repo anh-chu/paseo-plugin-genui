@@ -9,6 +9,7 @@ import {
   coerceState,
   DESCRIPTIONS,
   EXPECTED,
+  functionArg,
   LAMBDA_METHODS,
   stateMismatch,
   type Kind,
@@ -163,13 +164,24 @@ function roundTo(value: number, digits: number): number {
   return value < 0 ? -rounded : rounded;
 }
 
-/** `1234.5` → "1,234.5"; fixed `digits`, or up to 2 with trailing zeros trimmed. */
-function fmt(value: number, digits: number | undefined): string {
-  let fixed = roundTo(value, digits ?? 2).toFixed(digits ?? 2);
+/** `1234.5` → "1,234.5"; fixed `digits`, or up to `most` with trailing zeros trimmed. */
+function fmt(value: number, digits: number | undefined, most = 2): string {
+  let fixed = roundTo(value, digits ?? most).toFixed(digits ?? most);
   if (digits === undefined) fixed = fixed.replace(/\.0+$|(\.\d*?)0+$/, "$1");
   const [whole, fraction] = fixed.split(".");
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return fraction === undefined ? grouped : `${grouped}.${fraction}`;
+}
+
+/** `list[index]`, counting from the end for a negative index, as `.at()` does. */
+function at(list: readonly Value[] | string, index: number): Value {
+  const from = Math.trunc(index) < 0 ? list.length + Math.trunc(index) : Math.trunc(index);
+  return from >= 0 && from < list.length ? list[from] : null;
+}
+
+function typeOf(value: Value): string {
+  if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") return typeof value;
+  return "object";
 }
 
 /** The expression passed for `params[index]`, positionally or by name. */
@@ -246,23 +258,36 @@ const Interpreter = defineClass(
           }
           return this.named(expr.name, expr.pos);
         case "list":
-          return checkLength(
-            expr.items.map((item) => this.expr(item, scope)),
-            expr.pos,
-          );
+          return checkLength(this.spread(expr.items, scope).values, expr.pos);
         case "object": {
           const object: Record<string, Value> = {};
           for (const entry of expr.entries) {
             const value = this.expr(entry.value, scope);
-            if (entry.key === "kind" && (value === "node" || value === "action" || value === "binding")) {
+            if (entry.key === null) {
+              if (value === null) continue;
+              if (!isPlainObject(value)) throw new RuntimeError(entry.pos, `\`...\` in an object needs an object, got ${describe(value)}`);
+              // Copy own keys one by one: Object.assign would run the `__proto__` setter for loaded JSON's own `__proto__` key.
+              for (const [key, item] of Object.entries(value)) {
+                if (!(FORBIDDEN_PROPERTIES as readonly string[]).includes(key)) object[key] = item;
+              }
+              continue;
+            }
+            const key = typeof entry.key === "string" ? entry.key : toText(this.expr(entry.key, scope), entry.key.pos);
+            if ((FORBIDDEN_PROPERTIES as readonly string[]).includes(key)) throw new RuntimeError(entry.pos, `\`${key}\` is not accessible`);
+            if (key === "kind" && (value === "node" || value === "action" || value === "binding")) {
               throw new RuntimeError(entry.pos, `\`kind: "${value}"\` is reserved; use another key or value`);
             }
-            object[entry.key] = value;
+            object[key] = value;
           }
           return object;
         }
+        case "spread":
+          throw new RuntimeError(expr.pos, "`...` works only inside [ ], { } and function arguments");
+        case "let":
+          return this.expr(expr.body, { name: expr.name, value: this.expr(expr.value, scope), parent: scope });
         case "unary": {
           const operand = this.expr(expr.operand, scope);
+          if (expr.op === "typeof") return typeOf(operand);
           return expr.op === "!" ? !truthy(operand) : finite(-this.number(operand, expr.pos, "`-`"));
         }
         case "binary":
@@ -352,6 +377,10 @@ const Interpreter = defineClass(
           }
           if (typeof left === "number" && typeof right === "number") return finite(left + right);
           throw new RuntimeError(expr.pos, `\`+\` needs numbers or text, got ${describe(left)} and ${describe(right)}`);
+        case "in":
+          if (isList(right)) return typeof left === "number" && Number.isInteger(left) && left >= 0 && left < right.length;
+          if (isPlainObject(right)) return Object.hasOwn(right, this.text(left, expr.left.pos, "`in`"));
+          throw new RuntimeError(expr.pos, `\`in\` needs an object or a list on its right, got ${describe(right)}`);
         case "<":
         case "<=":
         case ">":
@@ -572,6 +601,27 @@ const Interpreter = defineClass(
       throw new RuntimeError(call.pos, `unknown action \`${call.name}\``);
     },
 
+    /** Evaluated items or arguments with `...list` spread in place, and the position each came from. */
+    spread(exprs: readonly Expr[], scope: Scope | null): { values: Value[]; positions: Pos[] } {
+      const values: Value[] = [];
+      const positions: Pos[] = [];
+      for (const expr of exprs) {
+        if (expr.type !== "spread") {
+          values.push(this.expr(expr, scope));
+          positions.push(expr.pos);
+          continue;
+        }
+        const list = this.expr(expr.value, scope);
+        if (!isList(list)) throw new RuntimeError(expr.pos, `\`...\` needs a list here, got ${describe(list)}`);
+        checkLength(list, expr.pos);
+        for (const item of list) {
+          values.push(item);
+          positions.push(expr.pos);
+        }
+      }
+      return { values, positions };
+    },
+
     /** Numbers in a list; nulls are skipped. */
     numbers(value: Value, pos: Pos, label: string): number[] {
       if (!isList(value)) throw new RuntimeError(pos, `${label} needs a list of numbers, got ${describe(value)}`);
@@ -581,11 +631,12 @@ const Interpreter = defineClass(
     },
 
     callFunction(call: CallExpr, scope: Scope | null): Value {
-      const args = call.args.map((arg) => this.expr(arg, scope));
+      const { values: args, positions } = this.spread(call.args, scope);
+      const posAt = (index: number) => positions[index] ?? call.pos;
       const name = call.name;
-      const numberAt = (index: number) => this.number(args[index], call.args[index].pos, `${name}()`);
+      const numberAt = (index: number) => this.number(args[index] ?? null, posAt(index), `${name}()`);
       const digitsAt = (index: number) =>
-        index < args.length ? this.digits(args[index], call.args[index].pos, `${name}()`) : undefined;
+        index < args.length ? this.digits(args[index], posAt(index), `${name}()`) : undefined;
       switch (name) {
         case "round":
           return finite(roundTo(numberAt(0), digitsAt(1) ?? 0));
@@ -602,12 +653,12 @@ const Interpreter = defineClass(
         case "pow":
           return finite(numberAt(0) ** numberAt(1));
         case "sum":
-          return finite(this.numbers(args[0], call.args[0].pos, "sum()").reduce((total, n) => total + n, 0));
+          return finite(this.numbers(args[0] ?? null, posAt(0), "sum()").reduce((total, n) => total + n, 0));
         case "min":
         case "max": {
           const values =
             args.length === 1 && isList(args[0])
-              ? this.numbers(args[0], call.args[0].pos, `${name}()`)
+              ? this.numbers(args[0], posAt(0), `${name}()`)
               : args.map((_, index) => numberAt(index));
           if (values.length === 0) return null;
           return name === "min" ? Math.min(...values) : Math.max(...values);
@@ -615,8 +666,8 @@ const Interpreter = defineClass(
         case "keys":
         case "values":
         case "entries": {
-          const object = args[0];
-          if (!isPlainObject(object)) throw new RuntimeError(call.args[0].pos, `${name}() needs an object, got ${describe(object)}`);
+          const object = args[0] ?? null;
+          if (!isPlainObject(object)) throw new RuntimeError(posAt(0), `${name}() needs an object, got ${describe(object)}`);
           const pairs = Object.entries(object);
           return checkLength(
             name === "keys" ? pairs.map(([key]) => key) : name === "values" ? pairs.map(([, value]) => value) : pairs,
@@ -624,12 +675,35 @@ const Interpreter = defineClass(
           );
         }
         case "Load": {
-          const path = this.text(args[0], call.args[0].pos, "Load()");
+          const path = this.text(args[0], posAt(0), "Load()");
           const loaded = this.data.get(dataKey({ path, raw: false }));
           if (loaded === undefined) throw new LoadPending(call.pos, path);
           if (!loaded.ok) throw new RuntimeError(call.pos, `Couldn't load ${path}: ${loaded.error}`);
           return loaded.value;
         }
+        case "Number": {
+          const value = args[0] ?? null;
+          if (value === null) return 0;
+          if (typeof value === "boolean") return value ? 1 : 0;
+          if (typeof value === "number") return value;
+          if (typeof value === "string") return finite(Number(value.trim().replaceAll(",", "")));
+          throw new RuntimeError(posAt(0), `Number() needs text or a number, got ${describe(value)}`);
+        }
+        case "String":
+          return toText(args[0] ?? null, posAt(0));
+        case "parseInt":
+          return finite(parseInt(toText(args[0] ?? null, posAt(0)), args.length > 1 ? numberAt(1) : 10));
+        case "parseFloat":
+          return finite(parseFloat(toText(args[0] ?? null, posAt(0))));
+        case "JSON.stringify": {
+          const indent = args[2] ?? null;
+          if (indent !== null && typeof indent !== "number" && typeof indent !== "string") {
+            throw new RuntimeError(posAt(2), `JSON.stringify() indent must be a number or text, got ${describe(indent)}`);
+          }
+          return checkString(JSON.stringify(args[0] ?? null, null, indent ?? undefined), call.pos);
+        }
+        case "Date.now":
+          return Date.now();
       }
       throw new RuntimeError(call.pos, `\`${name}\` is not a function`);
     },
@@ -640,7 +714,7 @@ const Interpreter = defineClass(
      * by the call site too, so two calls never share component state.
      */
     callOwn(call: CallExpr, fn: ArrowExpr, scope: Scope | null): Value {
-      const args = call.args.map((arg) => this.expr(arg, scope));
+      const args = this.spread(call.args, scope).values;
       let inner: Scope | null = null;
       for (const [index, name] of fn.params.entries()) {
         inner = { name, value: index < args.length ? args[index] : null, parent: inner };
@@ -656,12 +730,23 @@ const Interpreter = defineClass(
 
     method(call: Extract<Expr, { type: "method" }>, scope: Scope | null): Value {
       const receiver = this.expr(call.object, scope);
+      if (receiver === null && call.optional) return null;
       if (isList(receiver) && LAMBDA_METHODS.has(call.name)) return this.lambdaMethod(receiver, call, scope);
       if (isList(receiver) && call.name === "sort") return this.sort(receiver, call, scope);
-      const args = call.args.map((arg) => this.expr(arg, scope));
+      if (isList(receiver) && call.name === "reduce") return this.reduce(receiver, call, scope);
+      const { values: args, positions } = this.spread(call.args, scope);
+      const posAt = (index: number) => positions[index] ?? call.pos;
       const label = `.${call.name}()`;
-      const textAt = (index: number) => this.text(args[index], call.args[index].pos, label);
-      const bounds = () => args.map((arg, index) => this.number(arg, call.args[index].pos, label));
+      const textAt = (index: number) => this.text(args[index] ?? null, posAt(index), label);
+      const numberAt = (index: number) => this.number(args[index] ?? null, posAt(index), label);
+      const bounds = () => args.map((arg, index) => this.number(arg, posAt(index), label));
+      /** A whole count that keeps the result within the text limit. */
+      const sizeAt = (index: number, per: number) => {
+        const count = numberAt(index);
+        if (!Number.isInteger(count) || count < 0) throw new RuntimeError(posAt(index), `${label} needs a whole number of 0 or more`);
+        if (count * per > MAX_STRING_LENGTH) throw new RuntimeError(call.pos, `text longer than ${MAX_STRING_LENGTH} characters`);
+        return count;
+      };
       if (isList(receiver)) {
         switch (call.name) {
           case "join":
@@ -677,6 +762,18 @@ const Interpreter = defineClass(
             return receiver.indexOf(args[0]);
           case "concat":
             return checkLength(receiver.concat(...args), call.pos);
+          case "at":
+            return at(receiver, numberAt(0));
+          case "lastIndexOf":
+            return receiver.lastIndexOf(args[0] ?? null);
+          case "reverse":
+            return [...receiver].reverse();
+          case "flat": {
+            const depth = args.length > 0 ? numberAt(0) : 1;
+            const flatten = (list: readonly Value[], level: number): Value[] =>
+              checkLength(list.flatMap((item) => (isList(item) && level > 0 ? flatten(item, level - 1) : [item])), call.pos);
+            return flatten(receiver, depth);
+          }
         }
       } else if (typeof receiver === "string") {
         switch (call.name) {
@@ -701,10 +798,40 @@ const Interpreter = defineClass(
             return checkString(receiver.replace(textAt(0), () => textAt(1)), call.pos);
           case "replaceAll":
             return checkString(receiver.replaceAll(textAt(0), () => textAt(1)), call.pos);
+          case "indexOf":
+            return receiver.indexOf(textAt(0));
+          case "lastIndexOf":
+            return receiver.lastIndexOf(textAt(0));
+          case "at":
+            return at(receiver, numberAt(0));
+          case "charAt":
+            return receiver.charAt(numberAt(0));
+          case "substring":
+            return receiver.substring(...(bounds() as [number, number?]));
+          case "padStart":
+          case "padEnd": {
+            const width = sizeAt(0, 1);
+            const fill = args.length > 1 ? textAt(1) : " ";
+            return call.name === "padStart" ? receiver.padStart(width, fill) : receiver.padEnd(width, fill);
+          }
+          case "repeat":
+            return receiver.repeat(sizeAt(0, receiver.length));
+          case "trimStart":
+            return receiver.trimStart();
+          case "trimEnd":
+            return receiver.trimEnd();
         }
       } else if (typeof receiver === "number" && call.name === "toFixed") {
-        const digits = args.length > 0 ? this.digits(args[0], call.args[0].pos, label) : 0;
+        const digits = args.length > 0 ? this.digits(args[0], posAt(0), label) : 0;
         return roundTo(receiver, digits).toFixed(digits);
+      } else if (typeof receiver === "number" && call.name === "toLocaleString") {
+        return fmt(receiver, undefined, 3);
+      }
+      if (call.name === "toString" && (typeof receiver === "number" || typeof receiver === "string" || typeof receiver === "boolean")) {
+        if (args.length === 0 || typeof receiver !== "number") return String(receiver);
+        const radix = numberAt(0);
+        if (!Number.isInteger(radix) || radix < 2 || radix > 36) throw new RuntimeError(posAt(0), `${label} radix must be a whole number from 2 to 36`);
+        return receiver.toString(radix);
       }
       throw new RuntimeError(call.pos, `\`${label}\` is not available on ${describe(receiver)}`);
     },
@@ -712,7 +839,7 @@ const Interpreter = defineClass(
     /** A sorted copy; without a comparator, numbers sort numerically and anything else as text. */
     sort(list: readonly Value[], call: Extract<Expr, { type: "method" }>, scope: Scope | null): Value {
       checkLength(list, call.pos);
-      const fn = call.args[0];
+      const fn = call.args[0] && functionArg(call.args[0], this.program.named, "sort");
       if (fn === undefined) {
         return [...list].sort((a, b) =>
           typeof a === "number" && typeof b === "number" ? a - b : toText(a, call.pos).localeCompare(toText(b, call.pos)),
@@ -728,9 +855,29 @@ const Interpreter = defineClass(
       });
     },
 
+    /** `.reduce(fn, start?)`; without `start` the first item starts the total. */
+    reduce(list: readonly Value[], call: Extract<Expr, { type: "method" }>, scope: Scope | null): Value {
+      checkLength(list, call.pos);
+      const fn = call.args[0] && functionArg(call.args[0], this.program.named, "reduce");
+      if (fn?.type !== "arrow") throw new RuntimeError(call.pos, "`.reduce()` takes a function, as in `(total, x) => total + x.price, 0`");
+      if (call.args.length < 2 && list.length === 0) {
+        throw new RuntimeError(call.pos, "`.reduce()` on an empty list needs a starting value, as in `.reduce(f, 0)`");
+      }
+      const [totalName, itemName, indexName] = fn.params;
+      let total = call.args.length > 1 ? this.expr(call.args[1], scope) : list[0];
+      for (let index = call.args.length > 1 ? 0 : 1; index < list.length; index++) {
+        let inner = scope;
+        if (totalName !== undefined) inner = { name: totalName, value: total, parent: inner };
+        if (itemName !== undefined) inner = { name: itemName, value: list[index], parent: inner };
+        if (indexName !== undefined) inner = { name: indexName, value: index, parent: inner };
+        total = this.expr(fn.body, inner);
+      }
+      return total;
+    },
+
     lambdaMethod(list: readonly Value[], call: Extract<Expr, { type: "method" }>, scope: Scope | null): Value {
       checkLength(list, call.pos);
-      const fn = call.args[0];
+      const fn = call.args[0] && functionArg(call.args[0], this.program.named, call.name);
       if (fn?.type !== "arrow") throw new RuntimeError(call.pos, `\`.${call.name}()\` takes a function, as in \`x => x.price\``);
       const [itemName, indexName] = fn.params;
       const apply = (item: Value, index: number): Value => {
@@ -740,15 +887,18 @@ const Interpreter = defineClass(
         return this.expr(fn.body, inner);
       };
       switch (call.name) {
-        case "map": {
+        case "map":
+        case "flatMap": {
           const base = this.suffix;
           const out = list.map((item, index) => {
             this.suffix = `${base}#${index}`;
             return apply(item, index);
           });
           this.suffix = base;
-          return out;
+          return call.name === "map" ? out : checkLength(out.flatMap((item) => (isList(item) ? item : [item])), call.pos);
         }
+        case "findIndex":
+          return list.findIndex((item, index) => truthy(apply(item, index)));
         case "filter":
           return list.filter((item, index) => truthy(apply(item, index)));
         case "find":

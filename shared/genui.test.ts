@@ -81,6 +81,25 @@ describe("paseo-plugin-genui core, instructions, and gallery", () => {
     expect(roots.map((root) => root.props.text)).toEqual(["a b b", "a$&!b"]);
   });
 
+  it("accepts a declared function's name as a list method's function", () => {
+    const compiled = compile(
+      [
+        "items = [{n: \"x\", v: 3}, {n: \"y\", v: 1}, {n: \"z\", v: 2}]",
+        "label = (p, i) => `${i}:${p.n}`",
+        "big = p => p.v > 1",
+        "byV = (a, b) => a.v - b.v",
+        "Text(items.filter(big).map(label).join(\",\"))",
+        "Text(items.sort(byV).map(p => p.n).join(\",\"))",
+        "row = p => [p.n, p.v]",
+        "Table([\"n\", \"v\"], items.map(row))",
+      ].join("\n"),
+    );
+    expect(compiled.diagnostics).toEqual([]);
+    const { roots } = evaluate(compiled.program!, initialState(compiled.program!));
+    expect(roots.slice(0, 2).map((root) => root.props.text)).toEqual(["0:x,1:z", "y,z,x"]);
+    expect(roots[2].props.rows).toEqual([["x", 3], ["y", 1], ["z", 2]]);
+  });
+
   it("covers all 86 catalog components in the gallery and compiles + evaluates every gallery spec", async () => {
     const files = await listGallery();
     expect(files.length).toBeGreaterThanOrEqual(170);

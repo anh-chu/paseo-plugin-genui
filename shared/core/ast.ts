@@ -5,7 +5,8 @@ export type BinaryOperator =
   | "??" | "||" | "&&"
   | "==" | "!=" | "===" | "!=="
   | "<" | "<=" | ">" | ">="
-  | "+" | "-" | "*" | "/" | "%" | "**";
+  | "+" | "-" | "*" | "/" | "%" | "**"
+  | "in";
 
 export interface NamedArg {
   readonly name: string;
@@ -24,10 +25,13 @@ export type Expr =
   | { readonly type: "list"; readonly items: readonly Expr[]; readonly pos: Pos }
   | {
       readonly type: "object";
-      readonly entries: readonly { readonly key: string; readonly value: Expr; readonly pos: Pos }[];
+      /** An expression key is computed, as in `{[k]: 1}`; a null key spreads `value`, as in `{...o}`. */
+      readonly entries: readonly { readonly key: string | Expr | null; readonly value: Expr; readonly pos: Pos }[];
       readonly pos: Pos;
     }
-  | { readonly type: "unary"; readonly op: "!" | "-"; readonly operand: Expr; readonly pos: Pos }
+  /** `...value`; the parser makes it only as a list item or an argument. */
+  | { readonly type: "spread"; readonly value: Expr; readonly pos: Pos }
+  | { readonly type: "unary"; readonly op: "!" | "-" | "typeof"; readonly operand: Expr; readonly pos: Pos }
   | { readonly type: "binary"; readonly op: BinaryOperator; readonly left: Expr; readonly right: Expr; readonly pos: Pos }
   | { readonly type: "conditional"; readonly test: Expr; readonly then: Expr; readonly else: Expr; readonly pos: Pos }
   /** `object.name`; `pos` is the property name. */
@@ -41,16 +45,19 @@ export type Expr =
       readonly named: readonly NamedArg[];
       readonly pos: Pos;
     }
-  /** `object.name(...)`; `pos` is the method name. */
+  /** `object.name(...)`; `pos` is the method name. `optional`: after a `?.`, so a null object gives null. */
   | {
       readonly type: "method";
       readonly object: Expr;
       readonly name: string;
       readonly args: readonly Expr[];
       readonly named: readonly NamedArg[];
+      readonly optional: boolean;
       readonly pos: Pos;
     }
-  | { readonly type: "arrow"; readonly params: readonly string[]; readonly body: Expr; readonly pos: Pos };
+  | { readonly type: "arrow"; readonly params: readonly string[]; readonly body: Expr; readonly pos: Pos }
+  /** `name` holds `value` while `body` runs; block bodies and destructuring parse into these. */
+  | { readonly type: "let"; readonly name: string; readonly value: Expr; readonly body: Expr; readonly pos: Pos };
 
 export type CallExpr = Extract<Expr, { type: "call" }>;
 export type ArrowExpr = Extract<Expr, { type: "arrow" }>;
