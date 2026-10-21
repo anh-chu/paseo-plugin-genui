@@ -1,7 +1,7 @@
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import {
   collectLoads,
   compile,
@@ -27,6 +27,8 @@ import {
   loadGalleryFile,
   readGallerySpec,
 } from "../server/data-source";
+
+type PaseoApi = PluginHandlerContext["paseo"];
 
 describe("paseo-plugin-genui core, instructions, and gallery", () => {
   it("compiles every example in the agent instructions cleanly", () => {
