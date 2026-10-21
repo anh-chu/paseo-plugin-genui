@@ -1,6 +1,6 @@
 {
   "name": "paseo-plugin-genui",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Paseo plugin: agents answer with charts, diagrams, maps, plans and forms rendered inline in the chat.",
   "keywords": [
     "paseo",
