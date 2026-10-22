@@ -1,4 +1,4 @@
-import { Icon, Modal } from "@getpaseo/plugin/client/react-native";
+import { Icon } from "@getpaseo/plugin/client/react-native";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import React, { useEffect, useMemo, useState } from "react";
 import { Image as RNImage, Pressable, StyleSheet, Text, View } from "react-native";
@@ -7,8 +7,9 @@ import { hotspotPoints, imageRef } from "../../shared/logic/references-model";
 import { asRecord, finiteNumber, list, optionalText, text, type Props } from "../../shared/logic/values";
 import { useGeocodePlace, useImageSearch, useMapTileLoader } from "../loaders";
 import { ErrorLine } from "../node-renderer";
-import { useUiRuntime } from "../runtime";
+import { useUiRuntime, type ImageUrl } from "../runtime";
 import { LoadedImageView } from "./content";
+import { ImageLightbox } from "./image-lightbox";
 
 export function ImageSearch({ props }: { props: Props }) {
   const { theme } = useUiRuntime();
@@ -71,6 +72,39 @@ export function ImageSearch({ props }: { props: Props }) {
   );
 }
 
+function GalleryLightbox({
+  item,
+  onClose,
+}: {
+  item: { src?: string; query?: string; caption: string | null };
+  onClose(): void;
+}) {
+  const { loadImage } = useUiRuntime();
+  const found = useImageSearch(item.query ?? "");
+  const [loaded, setLoaded] = useState<ImageUrl | null>(null);
+
+  useEffect(() => {
+    if (item.query || !item.src || !loadImage) return;
+    let live = true;
+    void loadImage(item.src).then((res) => {
+      if (live) setLoaded(res);
+    });
+    return () => {
+      live = false;
+    };
+  }, [item.query, item.src, loadImage]);
+
+  const result = item.query ? (found === null ? null : found.ok ? { ok: true as const, url: found.image.url } : found) : loaded;
+  const failed = result !== null && !result.ok;
+  // The tile already shows why the image failed, so a failed lookup just closes.
+  useEffect(() => {
+    if (failed) onClose();
+  }, [failed, onClose]);
+
+  if (result === null || !result.ok) return null;
+  return <ImageLightbox uri={result.url} title={item.caption ?? item.query ?? item.src ?? "Image"} onClose={onClose} />;
+}
+
 export function Gallery({ props }: { props: Props }) {
   const { theme, compact } = useUiRuntime();
   const rawItems = list(props.images);
@@ -118,32 +152,11 @@ export function Gallery({ props }: { props: Props }) {
               ) : item.src ? (
                 <LoadedImageView src={item.src} alt={item.caption} height={150} zoomable={false} />
               ) : null}
-              {item.caption ? (
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11.5 }}>
-                  {item.caption}
-                </Text>
-              ) : null}
             </Pressable>
           ))}
         </View>
       ))}
-      {selected ? (
-        <Modal
-          title={selected.caption ?? "Image"}
-          open={true}
-          onOpenChange={(open) => {
-            if (!open) setSelected(null);
-          }}
-        >
-          <Modal.Content>
-            {selected.query ? (
-              <ImageSearch props={{ query: selected.query, alt: selected.caption ?? selected.query }} />
-            ) : selected.src ? (
-              <LoadedImageView src={selected.src} alt={selected.caption} height={360} zoomable={false} />
-            ) : null}
-          </Modal.Content>
-        </Modal>
-      ) : null}
+      {selected ? <GalleryLightbox item={selected} onClose={() => setSelected(null)} /> : null}
     </View>
   );
 }

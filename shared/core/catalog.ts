@@ -101,6 +101,11 @@ export const COMPONENTS = {
     group: "Content",
     params: [{ name: "text", kind: "text" }, tone, { name: "title", kind: "string", optional: true }],
   },
+  Draft: {
+    group: "Content",
+    params: [{ name: "markdown", kind: "text" }, { name: "title", kind: "string", optional: true }],
+    summary: "text the user approves before it is posted: rendered, with Source and Copy",
+  },
   Metric: {
     group: "Content",
     params: [

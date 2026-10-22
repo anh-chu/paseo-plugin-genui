@@ -4,6 +4,7 @@ import type { Props } from "../shared/logic/values";
 import {
   Badge,
   Callout,
+  Draft,
   Entity,
   File,
   Icon,
@@ -102,6 +103,7 @@ export const RENDERERS = {
   Divider,
   Text,
   Callout,
+  Draft,
   Metric,
   Badge,
   Icon,

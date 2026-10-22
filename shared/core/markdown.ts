@@ -434,6 +434,11 @@ function block(node: UiNode): string {
       return "---";
     case "Text":
       return inline(props.text);
+    case "Draft": {
+      const title = inline(props.title);
+      const body = inline(props.markdown);
+      return title === "" ? body : paragraphs([`**${title}**`, body]);
+    }
     case "Callout": {
       const title = inline(props.title);
       const text = inline(props.text);
