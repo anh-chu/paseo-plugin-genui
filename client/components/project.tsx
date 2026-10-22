@@ -36,7 +36,10 @@ export function Changes({ props }: { props: Props }) {
   const parsedPaths = parsePathFilter(props.paths);
   const [state, setState] = useState<ChangesResult | null>(null);
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  // Keyed by the request so a new target or path filter starts collapsed again.
+  const requestKey = `${rawTarget ?? ""}|${JSON.stringify(parsedPaths.ok ? parsedPaths.value : null)}`;
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+  const showAll = expandedFor === requestKey;
 
   useEffect(() => {
     const parsedTarget = parseChangesTarget(rawTarget);
@@ -140,7 +143,7 @@ export function Changes({ props }: { props: Props }) {
       })}
       {hiddenFiles > 0 ? (
         <Pressable
-          onPress={() => setShowAll(true)}
+          onPress={() => setExpandedFor(requestKey)}
           style={{
             paddingHorizontal: 10,
             paddingVertical: 8,

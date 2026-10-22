@@ -94,13 +94,10 @@ async function closestBase(
   defaultBranch: string,
 ): Promise<{ base: string; baseRef: string }> {
   const names = [...new Set([defaultBranch, ...BASE_CANDIDATES].filter(Boolean))];
+  // Both the remote and local ref of each name compete, so neither a stale origin nor a stale local copy wins.
+  const refs = names.flatMap((name) => [`origin/${name}`, name].map((ref) => ({ name, ref })));
   const resolved = await Promise.all(
-    names.map(async (name) => {
-      for (const ref of [`origin/${name}`, name]) {
-        if ((await runGit(cwd, ["rev-parse", "--verify", "-q", `${ref}^{commit}`])).ok) return { name, ref };
-      }
-      return null;
-    }),
+    refs.map(async (c) => ((await runGit(cwd, ["rev-parse", "--verify", "-q", `${c.ref}^{commit}`])).ok ? c : null)),
   );
   const existing = resolved.filter((c): c is { name: string; ref: string } => c !== null);
   const fallback = existing[0] ?? { name: defaultBranch || "main", ref: defaultBranch || "main" };
@@ -108,15 +105,21 @@ async function closestBase(
   if (own) return { base: own.name, baseRef: own.ref };
   if (!hasHead || existing.length < 2) return { base: fallback.name, baseRef: fallback.ref };
 
-  const ahead = await Promise.all(
+  const scored = await Promise.all(
     existing.map(async (c) => {
-      const res = await runGit(cwd, ["rev-list", "--count", `${c.ref}..HEAD`]);
-      return res.ok ? Number(res.stdout.trim()) : Number.POSITIVE_INFINITY;
+      const [ahead, behind] = await Promise.all([
+        runGit(cwd, ["rev-list", "--count", `${c.ref}..HEAD`]),
+        runGit(cwd, ["rev-list", "--count", `HEAD..${c.ref}`]),
+      ]);
+      const aheadCount = ahead.ok ? Number(ahead.stdout.trim()) : Number.POSITIVE_INFINITY;
+      // A ref that already holds every HEAD commit and more has merged this branch; it isn't where it forked from.
+      const mergedIn = aheadCount === 0 && behind.ok && Number(behind.stdout.trim()) > 0;
+      return { ...c, ahead: aheadCount, mergedIn };
     }),
   );
-  let best = 0;
-  for (let i = 1; i < existing.length; i++) if (ahead[i]! < ahead[best]!) best = i;
-  return { base: existing[best]!.name, baseRef: existing[best]!.ref };
+  const pool = scored.some((c) => !c.mergedIn) ? scored.filter((c) => !c.mergedIn) : scored;
+  const best = pool.reduce((a, b) => (b.ahead < a.ahead ? b : a));
+  return { base: best.name, baseRef: best.ref };
 }
 
 function mapStatusChar(code: string): ChangeKind {

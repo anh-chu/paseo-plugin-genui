@@ -55,4 +55,27 @@ describe("detectGitBranches", () => {
     const info = await detectGitBranches(dir);
     expect(info.ok && info.base).toBe("dev");
   });
+
+  it("uses local dev when it is ahead of a stale origin/dev", async () => {
+    const { dir, git, commit } = repo();
+    git("checkout", "-q", "-b", "dev");
+    git("update-ref", "refs/remotes/origin/dev", "HEAD");
+    for (const n of ["d1", "d2", "d3"]) commit(n);
+    git("checkout", "-q", "-b", "fix/thing");
+    commit("mine");
+    const info = await detectGitBranches(dir);
+    expect(info.ok && info.baseRef).toBe("dev");
+  });
+
+  it("keeps main for a branch from main that is already merged into dev", async () => {
+    const { dir, git, commit } = repo();
+    git("checkout", "-q", "-b", "fix/thing");
+    commit("mine");
+    git("checkout", "-q", "-b", "dev", "main");
+    commit("d1");
+    git("merge", "-q", "--no-ff", "-m", "merge", "fix/thing");
+    git("checkout", "-q", "fix/thing");
+    const info = await detectGitBranches(dir);
+    expect(info.ok && info.base).toBe("main");
+  });
 });
