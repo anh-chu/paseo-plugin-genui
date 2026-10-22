@@ -27,6 +27,8 @@ import { useUiRuntime } from "../runtime";
 import { LoadedImageView } from "./content";
 import { Diff } from "./data";
 
+const CHANGES_ROWS = 50;
+
 export function Changes({ props }: { props: Props }) {
   const { theme, agentId, blockKey } = useUiRuntime();
   const projectRpc = useProjectRpc();
@@ -34,6 +36,10 @@ export function Changes({ props }: { props: Props }) {
   const parsedPaths = parsePathFilter(props.paths);
   const [state, setState] = useState<ChangesResult | null>(null);
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
+  // Keyed by the request so a new target or path filter starts collapsed again.
+  const requestKey = `${rawTarget ?? ""}|${JSON.stringify(parsedPaths.ok ? parsedPaths.value : null)}`;
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+  const showAll = expandedFor === requestKey;
 
   useEffect(() => {
     const parsedTarget = parseChangesTarget(rawTarget);
@@ -67,6 +73,8 @@ export function Changes({ props }: { props: Props }) {
 
   const totals = changeTotals(state.files);
   const patchByPath = new Map(state.patches.map((p) => [p.path, p.patch]));
+  const shownFiles = showAll ? state.files : state.files.slice(0, CHANGES_ROWS);
+  const hiddenFiles = state.files.length - shownFiles.length;
 
   return (
     <View
@@ -97,7 +105,7 @@ export function Changes({ props }: { props: Props }) {
           <Text style={{ color: theme.colors.statusDanger }}>−{totals.deletions}</Text>
         </Text>
       </View>
-      {state.files.map((file, idx) => {
+      {shownFiles.map((file, idx) => {
         const patch = patchByPath.get(file.path);
         const isOpen = expandedFile === file.path;
         return (
@@ -133,6 +141,21 @@ export function Changes({ props }: { props: Props }) {
           </View>
         );
       })}
+      {hiddenFiles > 0 ? (
+        <Pressable
+          onPress={() => setExpandedFor(requestKey)}
+          style={{
+            paddingHorizontal: 10,
+            paddingVertical: 8,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: theme.colors.border,
+          }}
+        >
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+            Show {hiddenFiles} more file{hiddenFiles === 1 ? "" : "s"}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
