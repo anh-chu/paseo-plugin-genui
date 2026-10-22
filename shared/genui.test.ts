@@ -247,6 +247,15 @@ describe("Draft", () => {
     expect(compile('Card("x", [Draft()])').diagnostics.length).toBeGreaterThan(0);
   });
 
+  it("keeps the draft label in the markdown fallback", async () => {
+    const load = (req: { path: string }) => loadGalleryFile(req.path, req);
+    const untitled = await renderReplyMarkdown('```ui\nDraft("Looks good")\n```', load);
+    expect(untitled).toContain("**Draft**");
+    expect(untitled).toContain("Looks good");
+    const titled = await renderReplyMarkdown('```ui\nDraft("Looks good", "PR reply")\n```', load);
+    expect(titled).toContain("**Draft: PR reply**");
+  });
+
   it("is listed in the agent reference with a rule against markdown Code", () => {
     expect(UI_REFERENCE).toContain("Draft(markdown, title?)");
     expect(CODE_WORK_INSTRUCTIONS).toContain("Draft(markdown, title)");

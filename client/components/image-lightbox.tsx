@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Image,
   Modal,
@@ -13,7 +13,7 @@ import {
 import { clampZoom, wheelFactor, zoomAt, type LightboxView } from "../../shared/logic/lightbox";
 
 type PointerLike = { clientX: number; clientY: number; button: number };
-type WheelLike = { clientX: number; clientY: number; deltaY: number; ctrlKey: boolean; preventDefault(): void };
+type WheelLike = { clientX: number; clientY: number; deltaY: number; deltaMode: number; ctrlKey: boolean; preventDefault(): void };
 /** The DOM node react-native-web hands back as a View ref; the plugin has no DOM lib types. */
 type StageNode = {
   addEventListener(type: string, listener: (event: never) => void, options?: { passive: boolean }): void;
@@ -68,7 +68,9 @@ export function ImageLightbox({
   const shown = natural === null ? null : { width: natural.width * scale, height: natural.height * scale };
 
   const latest = useRef({ current, fit });
-  latest.current = { current, fit };
+  useLayoutEffect(() => {
+    latest.current = { current, fit };
+  });
 
   useEffect(() => {
     const node = stageRef.current as unknown as StageNode | null;
@@ -81,7 +83,7 @@ export function ImageLightbox({
     const onWheel = (e: WheelLike) => {
       e.preventDefault();
       const { current: now, fit: f } = latest.current;
-      setView(zoomAt(now, wheelFactor(e.deltaY, e.ctrlKey), fromCentre(e), f));
+      setView(zoomAt(now, wheelFactor(e.deltaY, e.ctrlKey, e.deltaMode), fromCentre(e), f));
     };
     const onDown = (e: PointerLike) => {
       if (e.button !== 0) return;

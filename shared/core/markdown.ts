@@ -437,7 +437,7 @@ function block(node: UiNode): string {
     case "Draft": {
       const title = inline(props.title);
       const body = inline(props.markdown);
-      return title === "" ? body : paragraphs([`**${title}**`, body]);
+      return paragraphs([title === "" ? "**Draft**" : `**Draft: ${title}**`, body]);
     }
     case "Callout": {
       const title = inline(props.title);
