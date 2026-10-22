@@ -56,12 +56,14 @@ async function runGit(
   }
 }
 
-async function detectGitBranches(cwd: string): Promise<
+export async function detectGitBranches(cwd: string): Promise<
   | {
       ok: true;
       branch: string | null;
       head: string | null;
       base: string;
+      /** The ref to diff against: origin/<base> when it exists, so a stale local branch doesn't skew it. */
+      baseRef: string;
       checkout: "branch" | "detached" | "unborn";
     }
   | ProjectFailure
@@ -77,12 +79,44 @@ async function detectGitBranches(cwd: string): Promise<
   const checkout = head === null ? "unborn" : branch !== null ? "branch" : "detached";
 
   const originHead = await runGit(cwd, ["symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"]);
-  let base = originHead.ok ? originHead.stdout.trim().replace(/^origin\//, "") : "";
-  if (!base) {
-    const mainExists = await runGit(cwd, ["rev-parse", "--verify", "-q", "main"]);
-    base = mainExists.ok ? "main" : "master";
-  }
-  return { ok: true, branch, head, base, checkout };
+  const defaultBranch = originHead.ok ? originHead.stdout.trim().replace(/^origin\//, "") : "";
+  const { base, baseRef } = await closestBase(cwd, branch, head !== null, defaultBranch);
+  return { ok: true, branch, head, base, baseRef, checkout };
+}
+
+const BASE_CANDIDATES = ["main", "master", "dev", "develop"];
+
+/** Feature branches often fork from dev rather than the default branch, so pick the candidate fewest commits behind HEAD. */
+async function closestBase(
+  cwd: string,
+  branch: string | null,
+  hasHead: boolean,
+  defaultBranch: string,
+): Promise<{ base: string; baseRef: string }> {
+  const names = [...new Set([defaultBranch, ...BASE_CANDIDATES].filter(Boolean))];
+  const resolved = await Promise.all(
+    names.map(async (name) => {
+      for (const ref of [`origin/${name}`, name]) {
+        if ((await runGit(cwd, ["rev-parse", "--verify", "-q", `${ref}^{commit}`])).ok) return { name, ref };
+      }
+      return null;
+    }),
+  );
+  const existing = resolved.filter((c): c is { name: string; ref: string } => c !== null);
+  const fallback = existing[0] ?? { name: defaultBranch || "main", ref: defaultBranch || "main" };
+  const own = existing.find((c) => c.name === branch);
+  if (own) return { base: own.name, baseRef: own.ref };
+  if (!hasHead || existing.length < 2) return { base: fallback.name, baseRef: fallback.ref };
+
+  const ahead = await Promise.all(
+    existing.map(async (c) => {
+      const res = await runGit(cwd, ["rev-list", "--count", `${c.ref}..HEAD`]);
+      return res.ok ? Number(res.stdout.trim()) : Number.POSITIVE_INFINITY;
+    }),
+  );
+  let best = 0;
+  for (let i = 1; i < existing.length; i++) if (ahead[i]! < ahead[best]!) best = i;
+  return { base: existing[best]!.name, baseRef: existing[best]!.ref };
 }
 
 function mapStatusChar(code: string): ChangeKind {
@@ -450,8 +484,8 @@ export async function readProjectChanges(
       base: gitInfo.base,
       onBase: false,
     };
-    diffArgs = ["diff", `${gitInfo.base}...HEAD`, "--unified=3"];
-    numstatArgs = ["diff", `${gitInfo.base}...HEAD`, "--numstat", "--find-renames"];
+    diffArgs = ["diff", `${gitInfo.baseRef}...HEAD`, "--unified=3"];
+    numstatArgs = ["diff", `${gitInfo.baseRef}...HEAD`, "--numstat", "--find-renames"];
   }
 
   const [numstatRes, nameStatusRes, patchRes] = await Promise.all([
@@ -558,7 +592,7 @@ export async function readProjectCommits(paseo: PaseoApi, agentId: string): Prom
   if (!gitInfo.ok) return gitInfo;
 
   const onBase = gitInfo.branch === gitInfo.base;
-  const range = onBase ? `-n ${MAX_COMMITS}` : `${gitInfo.base}..HEAD`;
+  const range = onBase ? `-n ${MAX_COMMITS}` : `${gitInfo.baseRef}..HEAD`;
   const logArgs = onBase
     ? ["log", `-n`, String(MAX_COMMITS), "--format=%H%x09%h%x09%s%x09%an%x09%at"]
     : ["log", range, "--format=%H%x09%h%x09%s%x09%an%x09%at"];
@@ -579,7 +613,7 @@ export async function readProjectCommits(paseo: PaseoApi, agentId: string): Prom
   let ahead: number | null = null;
   let behind: number | null = null;
   if (!onBase) {
-    const counts = await runGit(cwd, ["rev-list", "--left-right", "--count", `${gitInfo.base}...HEAD`]);
+    const counts = await runGit(cwd, ["rev-list", "--left-right", "--count", `${gitInfo.baseRef}...HEAD`]);
     if (counts.ok) {
       const [bStr, aStr] = counts.stdout.trim().split(/\s+/);
       behind = Number(bStr) || 0;
