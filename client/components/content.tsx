@@ -8,7 +8,7 @@ import { parseListRows } from "../../shared/logic/explain-logic";
 import { resolveIconName } from "../../shared/logic/icons";
 import { entityKind, imageRef, inlineFacts, sourceLinks } from "../../shared/logic/references-model";
 import { finiteNumber, isNode, list, optionalText, text, tone, type Props } from "../../shared/logic/values";
-import { MarkdownText } from "../markdown";
+import { InlineMarkdown, MarkdownText } from "../markdown";
 import { ErrorLine, RenderNode } from "../node-renderer";
 import { InTableContext, toneColor, toneMutedColor, useUiRuntime, type ImageUrl } from "../runtime";
 
@@ -473,7 +473,7 @@ export function List({ props }: { props: Props }) {
                 </RNText>
                 {item.detail ? (
                   <RNText style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
-                    {item.detail}
+                    <InlineMarkdown text={item.detail} theme={theme} />
                   </RNText>
                 ) : null}
               </View>

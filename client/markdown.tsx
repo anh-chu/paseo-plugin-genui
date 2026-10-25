@@ -1,7 +1,8 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { openExternalUrl } from "@getpaseo/plugin/client";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { parseMarkdown, type Block, type Inline } from "../shared/diagram/markdown";
+import { parseInline, parseMarkdown, type Block, type Inline } from "../shared/diagram/markdown";
 
 export function MarkdownText({
   text,
@@ -22,6 +23,12 @@ export function MarkdownText({
       ))}
     </View>
   );
+}
+
+/** One line of inline Markdown (links, emphasis, code), nested inside a caller's styled Text. */
+export function InlineMarkdown({ text, theme }: { text: string; theme: PluginTheme }) {
+  const content = useMemo(() => parseInline(text), [text]);
+  return <Spans content={content} theme={theme} />;
 }
 
 function BlockView({
@@ -160,6 +167,18 @@ function Spans({ content, theme }: { content: Inline[]; theme: PluginTheme }) {
                 color: theme.colors.accent,
                 backgroundColor: theme.colors.surface2,
               }}
+            >
+              {span.text}
+            </Text>
+          );
+        }
+        if (span.kind === "link") {
+          return (
+            <Text
+              key={index}
+              accessibilityRole="link"
+              onPress={() => void openExternalUrl(span.url)}
+              style={{ color: theme.colors.accent, textDecorationLine: "underline" }}
             >
               {span.text}
             </Text>
