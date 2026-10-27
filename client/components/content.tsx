@@ -1,4 +1,4 @@
-import { Icon as PaseoIcon, Modal } from "@getpaseo/plugin/client/react-native";
+import { Icon as PaseoIcon, Modal, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { ImageLightbox } from "./image-lightbox";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
 import React, { useContext, useEffect, useState } from "react";
@@ -47,6 +47,65 @@ export function Callout({ props }: { props: Props }) {
         </RNText>
       ) : null}
       <MarkdownText text={body} theme={theme} compact={compact} />
+    </View>
+  );
+}
+
+export function Draft({ props }: { props: Props }) {
+  const { theme, compact } = useUiRuntime();
+  const toast = useToast();
+  const [source, setSource] = useState(false);
+  const body = text(props.markdown);
+  const title = optionalText(props.title);
+  const action = (label: string, onPress: () => void, active = false) => (
+    <Pressable accessibilityRole="button" onPress={onPress} hitSlop={8}>
+      <RNText style={{ color: active ? theme.colors.foreground : theme.colors.foregroundMuted, fontSize: 11.5, fontWeight: "500" }}>
+        {label}
+      </RNText>
+    </Pressable>
+  );
+
+  return (
+    <View
+      style={{
+        borderRadius: 8,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface2,
+        overflow: "hidden",
+      }}
+    >
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          paddingHorizontal: 10,
+          paddingVertical: 6,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.border,
+        }}
+      >
+        <RNText numberOfLines={1} style={{ flex: 1, color: theme.colors.foregroundMuted, fontSize: 11.5 }}>
+          {title ?? "Draft"}
+        </RNText>
+        {action("Source", () => setSource((value) => !value), source)}
+        {action("Copy", () => {
+          void copyText(body).then(
+            () => toast.show("Copied", { variant: "success" }),
+            () => toast.error("Could not copy"),
+          );
+        })}
+      </View>
+      <View style={{ padding: 10 }}>
+        {source ? (
+          <RNText selectable style={{ color: theme.colors.foreground, fontFamily: "monospace", fontSize: 12, lineHeight: 18 }}>
+            {body}
+          </RNText>
+        ) : (
+          <MarkdownText text={body} theme={theme} compact={compact} />
+        )}
+      </View>
     </View>
   );
 }

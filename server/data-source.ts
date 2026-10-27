@@ -50,7 +50,7 @@ type FileContent =
 type FileReader = (requested: string, maxBytes: number) => Promise<FileContent>;
 
 const AGENT_REFUSAL =
-  "only files in this agent's workspace, its thread storage, /tmp or a folder added in Generative UI settings can be loaded";
+  "only files in this agent's workspace, its thread storage, /tmp or a folder added in Generative UI settings can be loaded; copy the file to $BB_THREAD_STORAGE to show it";
 
 let extraRoots: readonly string[] = [];
 
@@ -62,6 +62,7 @@ export function setExtraLoadFolders(folders: readonly string[]): void {
 function expandHome(requested: string): string {
   return requested === "~" || requested.startsWith("~/") ? path.join(os.homedir(), requested.slice(1)) : requested;
 }
+
 const GALLERY_REFUSAL = "gallery specs can only load files in gallery/";
 
 function contains(root: string, target: string): boolean {

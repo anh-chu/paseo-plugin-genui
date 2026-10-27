@@ -783,11 +783,27 @@ export function Tree({ props }: { props: Props }) {
   );
 }
 
+const PROSE_LANGUAGES = new Set(["markdown", "md", "text", "txt"]);
+
 export function Code({ props }: { props: Props }) {
   const { theme } = useUiRuntime();
   const toast = useToast();
   const code = text(props.code);
   const language = optionalText(props.language);
+  const wrap = language !== null && PROSE_LANGUAGES.has(language.toLowerCase());
+  const codeText = (
+    <Text
+      selectable
+      style={{
+        color: theme.colors.foreground,
+        fontFamily: "monospace",
+        fontSize: 12,
+        lineHeight: 18,
+      }}
+    >
+      {code}
+    </Text>
+  );
 
   return (
     <View
@@ -824,21 +840,13 @@ export function Code({ props }: { props: Props }) {
           <Icon name="Copy" size={13} color={theme.colors.foregroundMuted} />
         </Pressable>
       </View>
-      <ScrollView horizontal>
-        <View style={{ padding: 10 }}>
-          <Text
-            selectable
-            style={{
-              color: theme.colors.foreground,
-              fontFamily: "monospace",
-              fontSize: 12,
-              lineHeight: 18,
-            }}
-          >
-            {code}
-          </Text>
-        </View>
-      </ScrollView>
+      {wrap ? (
+        <View style={{ padding: 10 }}>{codeText}</View>
+      ) : (
+        <ScrollView horizontal>
+          <View style={{ padding: 10 }}>{codeText}</View>
+        </ScrollView>
+      )}
     </View>
   );
 }

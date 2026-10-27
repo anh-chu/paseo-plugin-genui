@@ -49,6 +49,7 @@ Replies here are read in Paseo, which draws these components; pasted output, a m
 - outdated or vulnerable packages → Dependencies: \`npm outdated --json --long\`, \`npm audit --json\`, \`pip list --outdated --format=json\`
 - a CI run → Pipeline: \`gh run view <id> --json name,displayTitle,status,conclusion,event,headBranch,headSha,url,createdAt,updatedAt,jobs\`
 - timings you measured (before/after, A vs B) → Benchmark([{name, before, after, unit}]) or Load(\`hyperfine --export-json\`); a page load → Waterfall(Load(a HAR)); what takes space → Treemap(Load(\`du -k -d 2 <dir>\` or an esbuild metafile))
+- text the user must approve before it is posted (PR comments, replies, messages) → Draft(markdown, title), never Code(…, "markdown")
 - an API response → Json(Load(…)) from \`curl -s -o\`
 - what you changed → Changes(); a commit → Changes(sha); this branch's commits → Commits(); the pull request → PullRequest(); subthreads → Threads()
 - tasks or issues → Board(Load(…)) from \`gh issue list --json number,title,state,labels,assignees,url,updatedAt\`
