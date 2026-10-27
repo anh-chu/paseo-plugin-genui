@@ -1,11 +1,12 @@
 import { useSettings, type PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { SettingsCard, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
+import { SettingsAction, SettingsCard, SettingsInput, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import React from "react";
 import { Text, View } from "react-native";
 import { genuiSettings } from "../shared/settings";
 
 export function GenUiSettingsScreen({ theme }: PluginSurfaceProps) {
   const settings = useSettings(genuiSettings);
+  const [folders, setFolders] = React.useState<string | null>(null);
 
   if (settings.status === "loading") {
     return (
@@ -48,6 +49,26 @@ export function GenUiSettingsScreen({ theme }: PluginSurfaceProps) {
             value={values.webLookups}
             onValueChange={(webLookups) => {
               void save({ ...values, webLookups }, revision);
+            }}
+          />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title="Files">
+        <SettingsCard>
+          <SettingsInput
+            label="Extra folders"
+            hint="Comma-separated folders, besides the workspace, thread storage and /tmp, that Load, Snippet and Image can read."
+            initialValue={values.extraFolders}
+            placeholder="~/dev/scratch"
+            onChangeText={setFolders}
+          />
+          <SettingsAction
+            label="Apply folder changes"
+            actionLabel="Save"
+            disabled={folders === null || folders === values.extraFolders}
+            onPress={() => {
+              if (folders !== null) void save({ ...values, extraFolders: folders }, revision);
             }}
           />
         </SettingsCard>

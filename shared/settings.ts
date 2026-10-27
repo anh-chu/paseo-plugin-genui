@@ -8,5 +8,13 @@ export const genuiSettings = defineSettings({
   schema: z.object({
     autoInstructions: z.boolean().default(true),
     webLookups: z.boolean().default(true),
+    extraFolders: z.string().default(""),
   }),
 });
+
+export function parseFolders(value: string): string[] {
+  return value
+    .split(/[,\n]/)
+    .map((folder) => folder.trim())
+    .filter((folder) => folder !== "");
+}

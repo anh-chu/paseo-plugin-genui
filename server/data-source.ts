@@ -49,7 +49,19 @@ type FileContent =
 
 type FileReader = (requested: string, maxBytes: number) => Promise<FileContent>;
 
-const AGENT_REFUSAL = "only files in this agent's workspace, its thread storage or /tmp can be loaded";
+const AGENT_REFUSAL =
+  "only files in this agent's workspace, its thread storage, /tmp or a folder added in Generative UI settings can be loaded";
+
+let extraRoots: readonly string[] = [];
+
+/** Folders, besides the workspace, thread storage and /tmp, that agents may load files from. */
+export function setExtraLoadFolders(folders: readonly string[]): void {
+  extraRoots = folders.map(expandHome).filter((folder) => path.isAbsolute(folder));
+}
+
+function expandHome(requested: string): string {
+  return requested === "~" || requested.startsWith("~/") ? path.join(os.homedir(), requested.slice(1)) : requested;
+}
 const GALLERY_REFUSAL = "gallery specs can only load files in gallery/";
 
 function contains(root: string, target: string): boolean {
@@ -191,10 +203,11 @@ async function readAgentFile(
   } else if (requested.startsWith(PASEO_STORAGE_PREFIX)) {
     const rel = requested.slice(PASEO_STORAGE_PREFIX.length);
     attempts = inside(storageRoot, path.resolve(storageRoot, rel));
-  } else if (path.isAbsolute(requested)) {
-    const target = path.resolve(requested);
+  } else if (path.isAbsolute(expandHome(requested))) {
+    const target = path.resolve(expandHome(requested));
     attempts = [...inside(storageRoot, target), ...inside(workspaceCwd, target)].slice(0, 1);
     if (attempts.length === 0) attempts = tempAttempts(target);
+    if (attempts.length === 0) attempts = extraRoots.flatMap((root) => inside(root, target)).slice(0, 1);
   } else {
     attempts = [
       ...inside(workspaceCwd, workspaceCwd !== null ? path.resolve(workspaceCwd, requested) : ""),

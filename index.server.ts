@@ -29,7 +29,7 @@ import {
   webTileRpc,
 } from "./shared/rpc";
 import { GENUI_BLOCK_KIND } from "./shared/segment";
-import { genuiSettings } from "./shared/settings";
+import { genuiSettings, parseFolders } from "./shared/settings";
 import {
   agentStorageDir,
   examplesReport,
@@ -41,6 +41,7 @@ import {
   loadGalleryFile,
   loadGalleryImage,
   readGallerySpec,
+  setExtraLoadFolders,
   sketchFontDataUrl,
 } from "./server/data-source";
 import {
@@ -69,10 +70,14 @@ export default function contribute(server: PluginServerContext) {
   let webLookupsEnabled = true;
 
   void settings.read().then((state) => {
-    if (state.status === "ready") webLookupsEnabled = state.values.webLookups;
+    if (state.status !== "ready") return;
+    webLookupsEnabled = state.values.webLookups;
+    setExtraLoadFolders(parseFolders(state.values.extraFolders));
   });
   const unsubscribeSettings = settings.subscribe((state) => {
-    if (state.status === "ready") webLookupsEnabled = state.values.webLookups;
+    if (state.status !== "ready") return;
+    webLookupsEnabled = state.values.webLookups;
+    setExtraLoadFolders(parseFolders(state.values.extraFolders));
   });
 
   const web = createWebLookups(
@@ -92,13 +97,14 @@ export default function contribute(server: PluginServerContext) {
     const current = await settings.read();
     if (current.status === "ready" && !current.values.autoInstructions) return;
     const webOn = current.status === "ready" ? current.values.webLookups : true;
+    const extraFolders = current.status === "ready" ? parseFolders(current.values.extraFolders) : [];
     const existing = request.config.systemPrompt ?? "";
     if (existing.includes(GENUI_MARKER)) return;
     return {
       ...request,
       config: {
         ...request.config,
-        systemPrompt: [existing, buildFullInstructions(webOn)].filter(Boolean).join("\n\n"),
+        systemPrompt: [existing, buildFullInstructions(webOn, extraFolders)].filter(Boolean).join("\n\n"),
       },
     };
   });

@@ -28,7 +28,7 @@ Syntax: one statement per line. \`$x = 8\` is state inputs bind to; \`name = exp
 Components (? optional; tone: neutral|good|warn|bad|info if meaningful; more in the next section):
 ${componentLines(REFERENCE_GROUPS)}
 Actions: ${actionList}; a list runs in order; Send posts as the user.
-Data: Load("path") reads JSON/CSV/TSV/JSONL from the workspace, "$BB_THREAD_STORAGE/x.json" or /tmp into lists and objects, and other files (a log, tsc output) as text; never retype values a file or command output holds. Snippet and Image read files the same way.
+Data: Load("path") reads JSON/CSV/TSV/JSONL from the workspace, "$BB_THREAD_STORAGE/x.json" or /tmp into lists and objects, and other files (a log, tsc output) as text; never retype values a file or command output holds. Snippet and Image read files the same way. Any other path fails to load: copy the file into $BB_THREAD_STORAGE first.
 Games, simulations, custom visuals: write \`\`\`app, a self-contained HTML page (inline CSS/JS, CSS vars --foreground --muted-foreground --border --primary --card; sandboxed, no network).`;
 
 export const UI_REFERENCE_MORE = `# Inline UI reference, continued
@@ -133,10 +133,11 @@ export const AGENT_INSTRUCTIONS_WEB_OFF = AGENT_INSTRUCTIONS.replace(MAP_EXAMPLE
 
 export const GENUI_MARKER = "[paseo-plugin-genui]";
 
-export function buildFullInstructions(webLookups: boolean): string {
+export function buildFullInstructions(webLookups: boolean, extraFolders: readonly string[] = []): string {
   return [
     GENUI_MARKER,
     UI_REFERENCE,
+    ...(extraFolders.length > 0 ? [`Load, Snippet and Image also read absolute paths under: ${extraFolders.join(", ")}.`] : []),
     UI_REFERENCE_MORE,
     CODE_WORK_INSTRUCTIONS,
     webLookups ? AGENT_INSTRUCTIONS : AGENT_INSTRUCTIONS_WEB_OFF,

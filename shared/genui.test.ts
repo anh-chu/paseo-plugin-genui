@@ -1,7 +1,8 @@
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import {
   collectLoads,
   compile,
@@ -26,7 +27,10 @@ import {
   loadAgentImage,
   loadGalleryFile,
   readGallerySpec,
+  setExtraLoadFolders,
 } from "../server/data-source";
+
+type PaseoApi = PluginHandlerContext["paseo"];
 
 describe("paseo-plugin-genui core, instructions, and gallery", () => {
   it("compiles every example in the agent instructions cleanly", () => {
@@ -232,6 +236,28 @@ describe("paseo-plugin-genui core, instructions, and gallery", () => {
       expect(audioSymlink.ok).toBe(false);
     } finally {
       await rm(testRoot, { recursive: true, force: true });
+    }
+  });
+  it("loads files from extra folders only once they are added in settings", async () => {
+    const folder = path.join(os.homedir(), `.genui-extra-folder-test-${Date.now()}`);
+    await mkdir(folder, { recursive: true });
+    try {
+      const file = path.join(folder, "notes.txt");
+      await writeFile(file, "scratch-line\n", "utf8");
+      const mockPaseo = {
+        agents: { ref: () => ({ current: () => ({ cwd: "/nonexistent-workspace" }), refresh: async () => null }) },
+      } as unknown as PaseoApi;
+      const tilde = `~/${path.basename(folder)}/notes.txt`;
+
+      expect((await loadAgentFile(mockPaseo, "agent_extra_test", file, { raw: true })).ok).toBe(false);
+
+      setExtraLoadFolders([`~/${path.basename(folder)}`]);
+      expect(await loadAgentFile(mockPaseo, "agent_extra_test", file, { raw: true })).toEqual({ ok: true, value: "scratch-line\n" });
+      expect(await loadAgentFile(mockPaseo, "agent_extra_test", tilde, { raw: true })).toEqual({ ok: true, value: "scratch-line\n" });
+      expect((await loadAgentFile(mockPaseo, "agent_extra_test", path.join(os.homedir(), ".bashrc"), { raw: true })).ok).toBe(false);
+    } finally {
+      setExtraLoadFolders([]);
+      await rm(folder, { recursive: true, force: true });
     }
   });
 });
