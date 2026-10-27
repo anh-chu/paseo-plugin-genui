@@ -64,6 +64,28 @@ describe("paseo-plugin-genui core, instructions, and gallery", () => {
     expect(roots.map((root) => root.props.text)).toEqual(["x,z,y", "1,9,10", "x,y"]);
   });
 
+  it("declares state an input binds to but the block never declared", () => {
+    const compiled = compile(`Card("x", [
+  Text($org == "" ? "no org" : $org),
+  Form([
+    Radio($browser, [{value: "A", detail: "a"}], label: "Q1"),
+    Input($org, label: "Q2"),
+    Toggle($ok, "Q3"),
+    Checklist($picks, ["a", "b"]),
+    Slider($n, 0, 10)
+  ], submit: "Send")
+])`);
+    expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(compiled.diagnostics.filter((d) => d.severity === "warning")).toHaveLength(5);
+    expect(initialState(compiled.program!)).toEqual({ browser: "", org: "", ok: false, picks: [], n: 0 });
+    expect(evaluate(compiled.program!, initialState(compiled.program!)).diagnostics).toEqual([]);
+  });
+
+  it("still reports state that no input binds to", () => {
+    const compiled = compile('Text($missing)');
+    expect(compiled.diagnostics.some((d) => d.severity === "error" && d.message.includes("unknown state `$missing`"))).toBe(true);
+  });
+
   it("renders a bare Send, OpenUrl or Copy among children as a Button", () => {
     const compiled = compile('Card("x", [Text("a"), OpenUrl("https://docs.google.com/x"), Send("Go"), Copy("id")])');
     expect(compiled.diagnostics.filter((d) => d.severity === "error")).toEqual([]);

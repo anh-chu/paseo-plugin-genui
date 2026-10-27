@@ -130,6 +130,63 @@ export function coerceState(holds: StateKind | undefined, value: Value): Value |
   return undefined;
 }
 
+type StateExpr = Extract<Expr, { type: "state" }>;
+
+/** The empty value an input starts with when its state was never declared. */
+function emptyState(holds: StateKind | undefined): readonly [] | number | boolean | string {
+  return holds === "list" ? [] : holds === "number" ? 0 : holds === "boolean" ? false : "";
+}
+
+function children(expr: Expr): readonly Expr[] {
+  switch (expr.type) {
+    case "literal":
+    case "state":
+    case "ident":
+      return [];
+    case "template":
+      return expr.parts;
+    case "list":
+      return expr.items;
+    case "object":
+      return expr.entries.flatMap((entry) => (typeof entry.key === "object" && entry.key !== null ? [entry.key, entry.value] : [entry.value]));
+    case "spread":
+      return [expr.value];
+    case "unary":
+      return [expr.operand];
+    case "binary":
+      return [expr.left, expr.right];
+    case "conditional":
+      return [expr.test, expr.then, expr.else];
+    case "member":
+      return [expr.object];
+    case "index":
+      return [expr.object, expr.index];
+    case "call":
+      return [...expr.args, ...expr.named.map((arg) => arg.value)];
+    case "method":
+      return [expr.object, ...expr.args, ...expr.named.map((arg) => arg.value)];
+    case "arrow":
+      return [expr.body];
+    case "let":
+      return [expr.value, expr.body];
+  }
+}
+
+/** Every `$name` passed as an input's binding, in source order, with what that input holds. */
+function inputBindings(expr: Expr): { state: StateExpr; holds: StateKind | undefined }[] {
+  const found: { state: StateExpr; holds: StateKind | undefined }[] = [];
+  const spec = expr.type === "call" ? COMPONENT_SPECS.get(expr.name) : undefined;
+  if (expr.type === "call" && spec !== undefined) {
+    spec.params.forEach((param, index) => {
+      if (param.kind !== "binding") return;
+      const slot = expr.named.find((arg) => arg.name === param.name)?.value ?? expr.args[index];
+      if (slot?.type === "state") found.push({ state: slot, holds: param.holds });
+    });
+  }
+  for (const child of children(expr)) found.push(...inputBindings(child));
+  return found;
+}
+
 /** Params whose literal arguments can be type-checked before evaluation. */
 const LITERAL_KINDS: Partial<Record<ParamKind, Kind>> = { list: "list", number: "number", boolean: "boolean" };
 
@@ -244,6 +301,24 @@ const Validator = defineClass(
         } else {
           this.named.set(statement.name, statement);
         }
+      }
+
+      // Agents often bind an input to `$name` without declaring it; declare it empty rather than fail the block.
+      const exprs = [...roots, ...[...this.named.values()].map((decl) => decl.value), ...stateDecls.map((decl) => decl.value)];
+      for (const slot of exprs.flatMap(inputBindings)) {
+        if (this.states.has(slot.state.name) || this.named.has(slot.state.name)) continue;
+        const empty = emptyState(slot.holds);
+        const { name, pos } = slot.state;
+        const value: Expr = typeof empty === "object" ? { type: "list", items: [], pos } : { type: "literal", value: empty, pos };
+        const decl: Decl = { name, value, pos };
+        this.states.set(decl.name, { index: stateDecls.length, decl });
+        stateDecls.push(decl);
+        const initial = JSON.stringify(empty);
+        this.diagnostics.report(
+          slot.state.pos,
+          `\`$${decl.name}\` was not declared, so it starts as ${initial}. Declare it first, as in \`$${decl.name} = ${initial}\`.`,
+          "warning",
+        );
       }
 
       const used = new Set<string>();
