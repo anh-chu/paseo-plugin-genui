@@ -1,4 +1,5 @@
 import { Icon, copyText, useToast } from "@getpaseo/plugin/client/react-native";
+import { InlineMarkdown } from "../markdown";
 import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { calendarLayout, calendarStats, dayLabel, readDays } from "../../shared/logic/calendarMath";
@@ -525,7 +526,7 @@ export function Steps({ props }: { props: Props }) {
               </Text>
               {detail ? (
                 <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
-                  {detail}
+                  <InlineMarkdown text={detail} theme={theme} />
                 </Text>
               ) : null}
             </View>
@@ -564,7 +565,7 @@ export function Timeline({ props }: { props: Props }) {
             </View>
             {entry.detail ? (
               <Text selectable style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
-                {entry.detail}
+                <InlineMarkdown text={entry.detail} theme={theme} />
               </Text>
             ) : null}
           </View>

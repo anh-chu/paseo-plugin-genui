@@ -46,7 +46,7 @@ import {
   STOPPED,
   type Clock,
 } from "../../shared/logic/widget-logic";
-import { MarkdownText } from "../markdown";
+import { InlineMarkdown, MarkdownText } from "../markdown";
 import { ErrorLine } from "../node-renderer";
 import { propsKey, usePersistedState, useUiRuntime } from "../runtime";
 
@@ -385,7 +385,7 @@ export function Plan({ props }: { props: Props }) {
                 ) : null}
               </View>
               {step.detail ? (
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{step.detail}</Text>
+                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}><InlineMarkdown text={step.detail} theme={theme} /></Text>
               ) : null}
               {step.files.length > 0 ? (
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>

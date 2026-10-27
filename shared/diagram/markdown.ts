@@ -11,7 +11,8 @@ export type Inline =
   | { kind: "text"; text: string }
   | { kind: "bold"; text: string }
   | { kind: "italic"; text: string }
-  | { kind: "code"; text: string };
+  | { kind: "code"; text: string }
+  | { kind: "link"; text: string; url: string };
 
 export type Block =
   | { kind: "heading"; level: number; content: Inline[] }
@@ -22,14 +23,22 @@ export type Block =
   | { kind: "quote"; content: Inline[] }
   | { kind: "rule" };
 
-const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)/;
+// A bare URL drops trailing punctuation, so "see https://x.dev." links to https://x.dev.
+const INLINE =
+  /(`[^`]+`|\[[^\]\n]+\]\([^)\s]+\)|https?:\/\/[^\s<>]*[^\s<>.,;:!?'")\]*_]|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)/;
+const LINK = /^\[([^\]\n]+)\]\(([^)\s]+)\)$/;
 
 export function parseInline(text: string): Inline[] {
   const out: Inline[] = [];
   for (const piece of text.split(INLINE)) {
     if (piece.length === 0) continue;
+    const link = LINK.exec(piece);
     if (piece.startsWith("`") && piece.endsWith("`") && piece.length > 1) {
       out.push({ kind: "code", text: piece.slice(1, -1) });
+    } else if (link) {
+      out.push({ kind: "link", text: link[1], url: link[2] });
+    } else if (/^https?:\/\//.test(piece)) {
+      out.push({ kind: "link", text: piece, url: piece });
     } else if ((piece.startsWith("**") && piece.endsWith("**")) || (piece.startsWith("__") && piece.endsWith("__"))) {
       out.push({ kind: "bold", text: piece.slice(2, -2) });
     } else if ((piece.startsWith("*") && piece.endsWith("*")) || (piece.startsWith("_") && piece.endsWith("_"))) {

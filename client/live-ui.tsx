@@ -1,6 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl, usePaseo, type PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { Icon, copyText, useRevealedText, useToast } from "@getpaseo/plugin/client/react-native";
+import { Markdown } from "@getpaseo/plugin/client/ui";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
@@ -15,7 +16,6 @@ import {
 import type { Action, Diagnostic, Value } from "../shared/core/types";
 import type { GenUiBlockData, GenUiTextData } from "../shared/rpc";
 import { useAudioLoader, useImageLoader, useLoadedData, useTextLoader, type FileScope } from "./loaders";
-import { MarkdownText } from "./markdown";
 import { RenderNodes } from "./render";
 import { UiRuntimeContext, type UiRuntime } from "./runtime";
 import { canRenderWebIframe, mountSandboxedAppIframe, openWorkspaceFile, readStorage, writeStorage } from "./web";
@@ -521,5 +521,10 @@ export function TimelineTextItem({
   layout,
 }: PluginTimelineItemProps<GenUiTextData>) {
   const revealed = useRevealedText(item.data.text, item.data.phase ?? "complete");
-  return <MarkdownText text={revealed} theme={theme} compact={layout.compact} />;
+  // Paseo's own renderer and testID give this text the host's links, selection and copy, and plugin styles such as Chat Polish.
+  return (
+    <View testID="assistant-message">
+      <Markdown>{revealed}</Markdown>
+    </View>
+  );
 }

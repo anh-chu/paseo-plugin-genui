@@ -1,4 +1,5 @@
 import { Icon, TextInput } from "@getpaseo/plugin/client/react-native";
+import { InlineMarkdown } from "../markdown";
 import React, { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { formMessage } from "../../shared/core/form";
@@ -377,7 +378,7 @@ export function Radio({ props }: { props: Props }) {
                 </Text>
                 {opt.detail ? (
                   <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
-                    {opt.detail}
+                    <InlineMarkdown text={opt.detail} theme={theme} />
                   </Text>
                 ) : null}
               </View>
@@ -686,7 +687,7 @@ export function OptionCards({ props }: { props: Props }) {
                 </Text>
               </View>
               {opt.detail ? (
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{opt.detail}</Text>
+                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}><InlineMarkdown text={opt.detail} theme={theme} /></Text>
               ) : null}
             </Pressable>
           );

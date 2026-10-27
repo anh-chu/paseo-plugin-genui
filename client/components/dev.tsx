@@ -1,5 +1,6 @@
 import { Icon, TextInput, copyText as copyToClipboard, useToast } from "@getpaseo/plugin/client/react-native";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
+import { InlineMarkdown } from "../markdown";
 import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { formatRatio, readBenchmark } from "../../shared/core/benchmark";
@@ -309,7 +310,7 @@ export function Findings({ props }: { props: Props }) {
               </Pressable>
             ) : null}
             {item.detail ? (
-              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>{item.detail}</Text>
+              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}><InlineMarkdown text={item.detail} theme={theme} /></Text>
             ) : null}
             <Pressable
               onPress={() => {
