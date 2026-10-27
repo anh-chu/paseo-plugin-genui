@@ -21,4 +21,8 @@ describe("parseInline links", () => {
   it("leaves a URL inside code alone", () => {
     expect(parseInline("`https://paseo.sh`")).toEqual([{ kind: "code", text: "https://paseo.sh" }]);
   });
+
+  it("shows a link with an unsafe scheme as its text", () => {
+    expect(parseInline("[x](javascript:void)")).toEqual([{ kind: "text", text: "x" }]);
+  });
 });

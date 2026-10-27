@@ -36,7 +36,8 @@ export function parseInline(text: string): Inline[] {
     if (piece.startsWith("`") && piece.endsWith("`") && piece.length > 1) {
       out.push({ kind: "code", text: piece.slice(1, -1) });
     } else if (link) {
-      out.push({ kind: "link", text: link[1], url: link[2] });
+      // Only web and mail links open; any other scheme (javascript:, file:) shows as its text.
+      out.push(/^(https?:|mailto:)/i.test(link[2]) ? { kind: "link", text: link[1], url: link[2] } : { kind: "text", text: link[1] });
     } else if (/^https?:\/\//.test(piece)) {
       out.push({ kind: "link", text: piece, url: piece });
     } else if ((piece.startsWith("**") && piece.endsWith("**")) || (piece.startsWith("__") && piece.endsWith("__"))) {
