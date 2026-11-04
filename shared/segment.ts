@@ -69,13 +69,46 @@ export function splitTimelineMessage(
         },
       });
     } else {
-      items.push({
-        type: "plugin",
-        kind: GENUI_TEXT_KIND,
-        version: 1,
-        data: { text: segment.text, phase },
-      });
+      items.push(...splitTaskDirectives(segment.text, phase));
     }
   });
   return { items };
+}
+
+// ponytail: Paseo applies only the first transformer that claims a message, so
+// once genui claims it the tasks plugin never sees its ::task{key="ABC-12"}
+// lines. We copy the tasks plugin's card format (kind "tasks-card", version 1,
+// key rule TASK_KEY_PATTERN) here; it breaks silently if that format changes.
+// Remove this when Paseo chains transformers over plugin output.
+const TASK_DIRECTIVE_LINE = /^::task\{([^}]*)\}\s*$/;
+const TASK_KEY = /^[A-Za-z][A-Za-z0-9]{0,9}-\d+$/;
+
+function splitTaskDirectives(text: string, phase: "streaming" | "complete"): PluginTimelineItem[] {
+  const items: PluginTimelineItem[] = [];
+  let prose: string[] = [];
+  const flushProse = () => {
+    const chunk = prose.join("\n").trim();
+    if (chunk !== "") items.push({ type: "plugin", kind: GENUI_TEXT_KIND, version: 1, data: { text: chunk, phase } });
+    prose = [];
+  };
+  for (const line of text.split("\n")) {
+    const match = TASK_DIRECTIVE_LINE.exec(line.trim());
+    if (!match) {
+      prose.push(line);
+      continue;
+    }
+    flushProse();
+    const attrs = match[1] ?? "";
+    const key = (/\bkey\s*=\s*"([^"]*)"/.exec(attrs)?.[1] ?? "").trim();
+    const title = (/\btitle\s*=\s*"([^"]*)"/.exec(attrs)?.[1] ?? "").trim();
+    const valid = TASK_KEY.test(key);
+    items.push({
+      type: "plugin",
+      kind: "tasks-card",
+      version: 1,
+      data: { taskKey: valid ? key.toUpperCase() : key, fallbackTitle: title || null, valid, phase },
+    });
+  }
+  flushProse();
+  return items;
 }
