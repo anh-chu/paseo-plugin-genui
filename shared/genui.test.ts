@@ -184,6 +184,16 @@ describe("paseo-plugin-genui core, instructions, and gallery", () => {
     expect(streamCompile.program).not.toBeNull();
   });
 
+  it("turns ::task directive lines in prose into tasks-plugin cards", () => {
+    const reply = 'Done.\n\n::task{key="llmwik-1"}\n\nNext step.\n```ui\nCard("A", [])\n```';
+    const items = splitTimelineMessage(reply, "complete")?.items;
+    expect(items?.map((item) => item.kind)).toEqual(["genui-text", "tasks-card", "genui-text", "genui-block"]);
+    expect(items?.[1]).toMatchObject({
+      pluginId: "tasks",
+      data: { taskKey: "LLMWIK-1", fallbackTitle: null, valid: true, phase: "complete" },
+    });
+  });
+
   it("renders replies containing ui and app blocks to plain markdown", async () => {
     const reply = [
       "Summary sentence.",
