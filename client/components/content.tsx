@@ -1,6 +1,6 @@
 import { Icon as PaseoIcon, Modal, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { ImageLightbox } from "./image-lightbox";
-import { ExternalLink } from "@getpaseo/plugin/client/ui";
+import { Link } from "@getpaseo/plugin/client/ui";
 import React, { useContext, useEffect, useState } from "react";
 import { Image as RNImage, Platform, Pressable, StyleSheet, Text as RNText, View } from "react-native";
 import { keyValuePairs } from "../../shared/logic/content-model";
@@ -439,9 +439,9 @@ export function Entity({ props }: { props: Props }) {
         </View>
       ) : null}
       {url && /^https?:\/\//i.test(url) ? (
-        <ExternalLink href={url}>
+        <Link href={url}>
           <RNText style={{ color: theme.colors.accent, fontSize: 12 }}>{url}</RNText>
-        </ExternalLink>
+        </Link>
       ) : null}
       {open ? (
         <Modal title={name} open={open} onOpenChange={setOpen}>
@@ -483,11 +483,11 @@ export function Sources({ props }: { props: Props }) {
               gap: 2,
             }}
           >
-            <ExternalLink href={item.href}>
+            <Link href={item.href}>
               <RNText style={{ color: theme.colors.accent, fontSize: 13, fontWeight: "500" }}>
                 [{item.number}] {item.title}
               </RNText>
-            </ExternalLink>
+            </Link>
             <RNText style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>{item.domain}</RNText>
             {item.note ? (
               <RNText style={{ color: theme.colors.foreground, fontSize: 12 }}>{item.note}</RNText>

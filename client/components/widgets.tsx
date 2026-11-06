@@ -1,4 +1,4 @@
-import { ExternalLink } from "@getpaseo/plugin/client/ui";
+import { Link } from "@getpaseo/plugin/client/ui";
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { hasOwnNumber } from "../../shared/logic/reply";
@@ -693,11 +693,11 @@ export function Board({ props }: { props: Props }) {
                   ) : null}
                 </View>
                 {card.url ? (
-                  <ExternalLink href={card.url}>
+                  <Link href={card.url}>
                     <Text style={{ color: theme.colors.foreground, fontSize: 12.5, fontWeight: "500" }}>
                       {card.title}
                     </Text>
-                  </ExternalLink>
+                  </Link>
                 ) : (
                   <Text style={{ color: theme.colors.foreground, fontSize: 12.5, fontWeight: "500" }}>
                     {card.title}

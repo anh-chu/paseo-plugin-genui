@@ -1,5 +1,5 @@
 import { Icon, TextInput, copyText as copyToClipboard, useToast } from "@getpaseo/plugin/client/react-native";
-import { ExternalLink } from "@getpaseo/plugin/client/ui";
+import { Link } from "@getpaseo/plugin/client/ui";
 import { InlineMarkdown } from "../markdown";
 import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -557,9 +557,9 @@ export function Pipeline({ props }: { props: Props }) {
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
                   <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
                   {job.url ? (
-                    <ExternalLink href={job.url}>
+                    <Link kind="forge" href={job.url}>
                       <Text style={{ color: theme.colors.foreground, fontSize: 12.5 }}>{job.name}</Text>
-                    </ExternalLink>
+                    </Link>
                   ) : (
                     <Text style={{ color: theme.colors.foreground, fontSize: 12.5 }}>{job.name}</Text>
                   )}

@@ -1,5 +1,5 @@
 import { Icon } from "@getpaseo/plugin/client/react-native";
-import { ExternalLink } from "@getpaseo/plugin/client/ui";
+import { Link } from "@getpaseo/plugin/client/ui";
 import React, { useEffect, useMemo, useState } from "react";
 import { Image as RNImage, Pressable, StyleSheet, Text, View } from "react-native";
 import { fitView, project, tileZoom, toScreen, visibleTiles, zoomAround } from "../../shared/logic/mapMath";
@@ -57,11 +57,11 @@ export function ImageSearch({ props }: { props: Props }) {
     <View style={{ gap: 4 }}>
       <LoadedImageView src={found.image.url} alt={alt} height={height} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-        <ExternalLink href={found.image.sourceUrl}>
+        <Link href={found.image.sourceUrl}>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
             {found.image.title}
           </Text>
-        </ExternalLink>
+        </Link>
         {found.image.creator || found.image.license ? (
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
             · {[found.image.creator, found.image.license].filter(Boolean).join(" · ")}

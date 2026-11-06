@@ -1,5 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { openExternalUrl } from "@getpaseo/plugin/client";
+import { useOpenLink } from "@getpaseo/plugin/client";
+import { useToast } from "@getpaseo/plugin/client/ui";
 import React, { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { parseInline, parseMarkdown, type Block, type Inline } from "../shared/diagram/markdown";
@@ -136,6 +137,8 @@ function BlockView({
 }
 
 function Spans({ content, theme }: { content: Inline[]; theme: PluginTheme }) {
+  const openLink = useOpenLink();
+  const toast = useToast();
   return (
     <>
       {content.map((span, index) => {
@@ -173,7 +176,7 @@ function Spans({ content, theme }: { content: Inline[]; theme: PluginTheme }) {
             <Text
               key={index}
               accessibilityRole="link"
-              onPress={() => void openExternalUrl(span.url)}
+              onPress={() => void openLink(span.url).catch((error: unknown) => toast.error(error instanceof Error ? error.message : String(error)))}
               style={{ color: theme.colors.accent, textDecorationLine: "underline" }}
             >
               {span.text}

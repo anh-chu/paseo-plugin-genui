@@ -1,5 +1,5 @@
 import { Icon } from "@getpaseo/plugin/client/react-native";
-import { ExternalLink } from "@getpaseo/plugin/client/ui";
+import { Link } from "@getpaseo/plugin/client/ui";
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { acceptanceVerdict, checkLabel, readAcceptance, verdictLine } from "../../shared/core/acceptance";
@@ -292,11 +292,11 @@ export function PullRequest() {
       }}
     >
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <ExternalLink href={pr.url}>
+        <Link kind="forge" href={pr.url}>
           <Text style={{ color: theme.colors.accent, fontSize: 13.5, fontWeight: "600" }}>
             #{pr.number} {pr.title}
           </Text>
-        </ExternalLink>
+        </Link>
         <Text style={{ color: theme.colors.statusSuccess, fontSize: 11.5, fontWeight: "600" }}>
           {pr.state}
         </Text>

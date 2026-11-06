@@ -24,7 +24,9 @@ Or from npm:
 paseo plugin add npm:paseo-plugin-genui
 ```
 
-Requires Paseo 0.14.0 or later.
+Requires a Paseo build newer than 0.15.2 that includes the public `useOpenLink` and `Link` APIs. These APIs are part of the companion Paseo change and have not been released yet.
+
+Links in answers follow Paseo’s **Agent links** preference. Pull request and CI links follow **Pull request links**. On Electron, **Open in Paseo** opens a browser tab in the containing workspace. Other platforms and screens without a workspace browser open links externally.
 
 ## What an answer looks like
 
@@ -73,6 +75,8 @@ Cards can collect a reply before anything is sent. A button with `Queue(text)` a
 - `/genui-gallery` — Open the **Gen-UI Gallery** screen (176 examples across all 88 components, plus a live spec Playground).
 
 ## Develop
+
+Until the companion SDK is published, build and pack `@getpaseo/plugin` from the Paseo worktree containing the new APIs. After installing this repository’s dependencies, use `npm install --no-save --package-lock=false /absolute/path/to/getpaseo-plugin-<version>.tgz` to check against that local SDK. The lockfile tracks the latest published SDK; it does not yet contain the new API declarations.
 
 ```bash
 npm install

@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { openExternalUrl, usePaseo, type PluginTimelineItemProps } from "@getpaseo/plugin/client";
+import { useOpenLink, usePaseo, type PluginTimelineItemProps } from "@getpaseo/plugin/client";
 import { Icon, copyText, useRevealedText, useToast } from "@getpaseo/plugin/client/react-native";
 import { Markdown } from "@getpaseo/plugin/client/ui";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -74,6 +74,7 @@ export function LiveUi({
   footerLabel?: string;
 }) {
   const toast = useToast();
+  const openLink = useOpenLink();
   const initial = useMemo(() => initialState(program, data), [program, data]);
   const [changed, setChanged] = useState(() => readStoredValues(stateKey));
   const state = useMemo(
@@ -132,7 +133,7 @@ export function LiveUi({
           writeStorage(answerKey, action.text);
           return;
         case "openUrl":
-          await openExternalUrl(action.url);
+          await openLink(action.url);
           return;
         case "copy":
           await copyText(action.text);
@@ -140,7 +141,7 @@ export function LiveUi({
           return;
       }
     },
-    [answerKey, queueAgent, queuePrefix, send, setQueued, setValue, toast],
+    [answerKey, openLink, queueAgent, queuePrefix, send, setQueued, setValue, toast],
   );
 
   const runtime = useMemo<UiRuntime>(
