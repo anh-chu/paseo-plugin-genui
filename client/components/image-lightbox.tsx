@@ -4,6 +4,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -140,77 +141,81 @@ export function ImageLightbox({
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.backdrop}>
-        <View style={styles.header}>
-          <Text numberOfLines={1} style={styles.title}>
-            {title}
-            {natural !== null ? `   ${natural.width} × ${natural.height}` : ""}
-          </Text>
-          {natural !== null ? <Text style={styles.percent}>{Math.round(scale * 100)}%</Text> : null}
-          <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={16} onPress={onClose} style={styles.close}>
-            <Text style={styles.closeText}>✕</Text>
-          </Pressable>
-        </View>
-        {web ? (
-          <View
-            ref={stageRef}
-            style={styles.webStage}
-            onLayout={(e) => setStage({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
-          >
-            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={closeFromStage} style={StyleSheet.absoluteFill} />
-            {shown !== null ? (
-              <Pressable
-                accessibilityRole="imagebutton"
-                accessibilityLabel={title}
-                onPress={toggleWeb}
-                style={{
-                  position: "absolute",
-                  left: (stageWidth - shown.width) / 2 + current.x,
-                  top: (stageHeight - shown.height) / 2 + current.y,
-                  cursor: current.zoom > fit ? "grab" : zoomable ? "zoom-in" : "default",
-                } as never}
-              >
-                <Image source={{ uri }} resizeMode="contain" style={shown} />
-              </Pressable>
-            ) : (
-              <Text style={[styles.percent, styles.loading]}>Loading…</Text>
-            )}
+        {/* The modal covers the whole screen; keep the header and close button clear of the status
+            bar, the camera, and a folded iPhone's vertical bar. */}
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.header}>
+            <Text numberOfLines={1} style={styles.title}>
+              {title}
+              {natural !== null ? `   ${natural.width} × ${natural.height}` : ""}
+            </Text>
+            {natural !== null ? <Text style={styles.percent}>{Math.round(scale * 100)}%</Text> : null}
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={16} onPress={onClose} style={styles.close}>
+              <Text style={styles.closeText}>✕</Text>
+            </Pressable>
           </View>
-        ) : (
-          <ScrollView
-            style={styles.stage}
-            contentContainerStyle={{ minHeight: stageHeight, minWidth: stageWidth, alignItems: "center", justifyContent: "center" }}
-            horizontal={actual}
-            maximumZoomScale={4}
-            centerContent
-          >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-              onPress={onClose}
-              style={{ minHeight: stageHeight, minWidth: stageWidth }}
+          {web ? (
+            <View
+              ref={stageRef}
+              style={styles.webStage}
+              onLayout={(e) => setStage({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
             >
-              <ScrollView
-                contentContainerStyle={{ minHeight: stageHeight, justifyContent: "center", alignItems: "center" }}
-                scrollEnabled={actual}
-              >
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={closeFromStage} style={StyleSheet.absoluteFill} />
+              {shown !== null ? (
                 <Pressable
                   accessibilityRole="imagebutton"
-                  accessibilityLabel={zoomable ? (actual ? "Fit to window" : "Show actual size") : title}
-                  onPress={() => {
-                    if (zoomable) setActual((value) => !value);
-                  }}
+                  accessibilityLabel={title}
+                  onPress={toggleWeb}
+                  style={{
+                    position: "absolute",
+                    left: (stageWidth - shown.width) / 2 + current.x,
+                    top: (stageHeight - shown.height) / 2 + current.y,
+                    cursor: current.zoom > fit ? "grab" : zoomable ? "zoom-in" : "default",
+                  } as never}
                 >
-                  {shown !== null ? (
-                    <Image source={{ uri }} resizeMode="contain" style={shown} />
-                  ) : (
-                    <Text style={styles.percent}>Loading…</Text>
-                  )}
+                  <Image source={{ uri }} resizeMode="contain" style={shown} />
                 </Pressable>
-              </ScrollView>
-            </Pressable>
-          </ScrollView>
-        )}
-        <Text style={styles.hint}>{hint}</Text>
+              ) : (
+                <Text style={[styles.percent, styles.loading]}>Loading…</Text>
+              )}
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.stage}
+              contentContainerStyle={{ minHeight: stageHeight, minWidth: stageWidth, alignItems: "center", justifyContent: "center" }}
+              horizontal={actual}
+              maximumZoomScale={4}
+              centerContent
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                onPress={onClose}
+                style={{ minHeight: stageHeight, minWidth: stageWidth }}
+              >
+                <ScrollView
+                  contentContainerStyle={{ minHeight: stageHeight, justifyContent: "center", alignItems: "center" }}
+                  scrollEnabled={actual}
+                >
+                  <Pressable
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={zoomable ? (actual ? "Fit to window" : "Show actual size") : title}
+                    onPress={() => {
+                      if (zoomable) setActual((value) => !value);
+                    }}
+                  >
+                    {shown !== null ? (
+                      <Image source={{ uri }} resizeMode="contain" style={shown} />
+                    ) : (
+                      <Text style={styles.percent}>Loading…</Text>
+                    )}
+                  </Pressable>
+                </ScrollView>
+              </Pressable>
+            </ScrollView>
+          )}
+          <Text style={styles.hint}>{hint}</Text>
+        </SafeAreaView>
       </View>
     </Modal>
   );
@@ -218,6 +223,7 @@ export function ImageLightbox({
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.94)" },
+  safe: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
   title: { flex: 1, color: "#f4f4f5", fontSize: 13, fontWeight: "600" },
   percent: { color: "#a1a1aa", fontSize: 12 },
