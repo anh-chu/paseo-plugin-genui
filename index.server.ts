@@ -115,7 +115,7 @@ export default function contribute(server: PluginServerContext) {
   server.on("agent.turn_ended", async (event, { paseo }) => {
     if (event.outcome.kind !== "completed" || event.agent.parentAgentId) return;
     const current = await settings.read();
-    if (current.status === "ready" && !current.values.autoInstructions) return;
+    if (current.status === "ready" && (!current.values.autoInstructions || !current.values.autoRepair)) return;
     const agent = paseo.agents.ref(event.agent.id);
     const page = await agent.timeline.refetch({ direction: "tail", limit: 40 });
     if (page.error) return;

@@ -38,6 +38,14 @@ export function GenUiSettingsScreen({ theme }: PluginSurfaceProps) {
               void save({ ...values, autoInstructions }, revision);
             }}
           />
+          <SettingsSwitch
+            label="Ask agents to fix broken blocks"
+            hint="When a reply has ```ui blocks that show as errors, send the agent one follow-up to rewrite them. The follow-up is a new turn, so the chat shows as unread again when it ends."
+            value={values.autoRepair}
+            onValueChange={(autoRepair) => {
+              void save({ ...values, autoRepair }, revision);
+            }}
+          />
         </SettingsCard>
       </SettingsSection>
 

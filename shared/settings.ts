@@ -7,6 +7,7 @@ export const genuiSettings = defineSettings({
   version: 1,
   schema: z.object({
     autoInstructions: z.boolean().default(true),
+    autoRepair: z.boolean().default(true),
     webLookups: z.boolean().default(true),
     extraFolders: z.string().default(""),
   }),
