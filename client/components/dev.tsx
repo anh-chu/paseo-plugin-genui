@@ -17,8 +17,13 @@ import {
   findingLocation,
   fixAllMessage,
   fixThisMessage,
+  hasLifecycle,
+  isResolved,
+  needsFix,
   readFindings,
   severityLabel,
+  statusCounts,
+  statusSentence,
 } from "../../shared/core/findings";
 import { readLogs, type LogLevel } from "../../shared/core/logs";
 import { formatAmount, formatMs, formatPercent as formatPerfPercent } from "../../shared/core/perf-units";
@@ -249,17 +254,26 @@ export function Findings({ props }: { props: Props }) {
   });
   if (!parsed.ok) return <ErrorLine message={parsed.error} />;
   const { report } = parsed;
+  // Only findings that still need a fix get fix buttons: a fixed, confirmed, rejected or won't-fix item is done.
+  const open = report.findings.filter(needsFix);
+  const lifecycle = hasLifecycle(report.findings);
+  const counts = statusCounts(report.findings);
 
   return (
     <View style={{ gap: 8 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "600" }}>
-          {title ?? `${report.findings.length} finding${report.findings.length === 1 ? "" : "s"}`}
-        </Text>
-        {report.findings.length > 1 ? (
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: theme.colors.foreground, fontSize: 13, fontWeight: "600" }}>
+            {title ?? `${report.findings.length} finding${report.findings.length === 1 ? "" : "s"}`}
+          </Text>
+          {counts.length ? (
+            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11.5 }}>{counts.map((c) => c.text).join(" · ")}</Text>
+          ) : null}
+        </View>
+        {open.length > 1 ? (
           <Pressable
             onPress={() => {
-              const msg = fixAllMessage(report.findings, report.scale);
+              const msg = fixAllMessage(open, report.scale);
               if (msg) void run([{ kind: "action", type: "send", text: msg }]);
             }}
             style={{
@@ -319,11 +333,28 @@ export function Findings({ props }: { props: Props }) {
             {shown.detail ? (
               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}><InlineMarkdown text={shown.detail} theme={theme} /></Text>
             ) : null}
+            {lifecycle ? (
+              <Text
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: "500",
+                  color: needsFix(item)
+                    ? theme.colors.foreground
+                    : item.status === "confirmed"
+                      ? theme.colors.statusSuccess
+                      : isResolved(item)
+                        ? theme.colors.foregroundMuted
+                        : theme.colors.statusWarning,
+                }}
+              >
+                {statusSentence(item)}
+              </Text>
+            ) : null}
             {feedback.controls(
               idx,
               `finding "${item.title}"`,
               original,
-              <Pressable
+              needsFix(item) ? <Pressable
                 onPress={() => {
                   const msg = fixThisMessage(item);
                   void run([{ kind: "action", type: "send", text: msg }]);
@@ -339,7 +370,7 @@ export function Findings({ props }: { props: Props }) {
                 <Text style={{ color: theme.colors.foreground, fontSize: 11.5, fontWeight: "500" }}>
                   Fix this
                 </Text>
-              </Pressable>,
+              </Pressable> : undefined,
             )}
           </View>
         );
