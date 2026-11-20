@@ -1,10 +1,11 @@
 import { Icon, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { InlineMarkdown } from "../markdown";
 import React, { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import { calendarLayout, calendarStats, dayLabel, readDays } from "../../shared/logic/calendarMath";
 import { percentages, pieSlices } from "../../shared/logic/chartMath";
 import { buildTree, defaultExpanded, timelineEntries, visibleRows } from "../../shared/logic/content-model";
+import { computeTableLayout, parseTableColumns, resolveRowCells } from "../../shared/logic/tableLayout";
 import {
   addMonths,
   dayKey,
@@ -35,86 +36,108 @@ import { useItemFeedback } from "./feedback";
 
 export function Table({ props }: { props: Props }) {
   const { theme, compact } = useUiRuntime();
-  const columns = list(props.columns).map((col) => {
-    const rec = asRecord(col);
-    return rec ? text(rec.label ?? rec.key) : text(col);
-  });
-  const rows = list(props.rows);
+  const columns = useMemo(() => parseTableColumns(list(props.columns)), [props.columns]);
+  const rawRows = list(props.rows);
+  const resolvedRows = useMemo(
+    () => rawRows.map((row) => resolveRowCells(row, columns)),
+    [rawRows, columns],
+  );
+  const [availableWidth, setAvailableWidth] = useState(0);
+  const onLayout = (e: LayoutChangeEvent) => {
+    const w = Math.round(e.nativeEvent.layout.width);
+    if (w >= 120 && w !== availableWidth) setAvailableWidth(w);
+  };
+  const layout = useMemo(
+    () => computeTableLayout(columns, resolvedRows, availableWidth, compact),
+    [columns, resolvedRows, availableWidth, compact],
+  );
   const feedback = useItemFeedback(`table:${propsKey(props.rows)}`, { comments: props.comments === true, editable: false });
+
+  if (columns.length === 0) return null;
+
+  const cellStyle = (cIdx: number) =>
+    layout.scroll
+      ? { width: layout.widths[cIdx], paddingHorizontal: 10, paddingVertical: 8 }
+      : {
+          flexGrow: layout.widths[cIdx],
+          flexShrink: 1,
+          flexBasis: 0,
+          minWidth: 0,
+          paddingHorizontal: 10,
+          paddingVertical: 8,
+        };
+
+  const tableContent = (
+    <View
+      style={{
+        borderRadius: 8,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.border,
+        overflow: "hidden",
+        width: layout.scroll ? layout.totalWidth : "100%",
+      }}
+    >
+      <View
+        style={{
+          flexDirection: "row",
+          backgroundColor: theme.colors.surface2,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.border,
+        }}
+      >
+        {columns.map((col, idx) => (
+          <View key={`${col.label}:${idx}`} style={cellStyle(idx)}>
+            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontWeight: "600" }}>
+              {col.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+      {resolvedRows.map((cells, rIdx) => {
+        const first = isNode(cells[0]) ? "" : text(cells[0]);
+        const controls = feedback.controls(rIdx, `row ${rIdx + 1}${first ? ` (${first})` : ""}`, {});
+        return (
+          <View
+            key={rIdx}
+            style={{
+              borderTopWidth: rIdx === 0 ? 0 : StyleSheet.hairlineWidth,
+              borderTopColor: theme.colors.border,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {columns.map((_, cIdx) => {
+                const cell = cells[cIdx];
+                return (
+                  <View key={cIdx} style={cellStyle(cIdx)}>
+                    {isNode(cell) ? (
+                      <RenderNode node={cell} />
+                    ) : (
+                      <Text selectable style={{ color: theme.colors.foreground, fontSize: 12.5 }}>
+                        <InlineMarkdown text={text(cell)} theme={theme} />
+                      </Text>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+            {controls ? <View style={{ paddingHorizontal: 10, paddingBottom: 8 }}>{controls}</View> : null}
+          </View>
+        );
+      })}
+    </View>
+  );
 
   return (
     <InTableContext.Provider value={true}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={!compact}>
-        <View
-          style={{
-            borderRadius: 8,
-            borderWidth: StyleSheet.hairlineWidth,
-            borderColor: theme.colors.border,
-            overflow: "hidden",
-            minWidth: "100%",
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              backgroundColor: theme.colors.surface2,
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: theme.colors.border,
-            }}
-          >
-            {columns.map((col, idx) => (
-              <View
-                key={`${col}:${idx}`}
-                style={{ flex: 1, minWidth: 110, paddingHorizontal: 10, paddingVertical: 8 }}
-              >
-                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, fontWeight: "600" }}>
-                  {col}
-                </Text>
-              </View>
-            ))}
-          </View>
-          {rows.map((row, rIdx) => {
-            const rec = asRecord(row);
-            const cells = Array.isArray(row)
-              ? row
-              : rec
-                ? columns.map((c) => rec[c] ?? null)
-                : [row];
-            const first = isNode(cells[0]) ? "" : text(cells[0]);
-            const controls = feedback.controls(rIdx, `row ${rIdx + 1}${first ? ` (${first})` : ""}`, {});
-            return (
-              <View
-                key={rIdx}
-                style={{
-                  borderTopWidth: rIdx === 0 ? 0 : StyleSheet.hairlineWidth,
-                  borderTopColor: theme.colors.border,
-                }}
-              >
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                {columns.map((_, cIdx) => {
-                  const cell = cells[cIdx];
-                  return (
-                    <View
-                      key={cIdx}
-                      style={{ flex: 1, minWidth: 110, paddingHorizontal: 10, paddingVertical: 8 }}
-                    >
-                      {isNode(cell) ? (
-                        <RenderNode node={cell} />
-                      ) : (
-                        <Text selectable style={{ color: theme.colors.foreground, fontSize: 12.5 }}>
-                          {text(cell)}
-                        </Text>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-              {controls ? <View style={{ paddingHorizontal: 10, paddingBottom: 8 }}>{controls}</View> : null}
-              </View>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View onLayout={onLayout} style={{ width: "100%" }}>
+        {layout.scroll ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={!compact}>
+            {tableContent}
+          </ScrollView>
+        ) : (
+          tableContent
+        )}
+      </View>
     </InTableContext.Provider>
   );
 }
