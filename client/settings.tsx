@@ -28,6 +28,19 @@ export function GenUiSettingsScreen({ theme }: PluginSurfaceProps) {
 
   return (
     <View style={{ gap: 16 }}>
+      <SettingsSection title="Sidebar">
+        <SettingsCard>
+          <SettingsSwitch
+            label="Show Gen-UI Gallery in the sidebar"
+            hint="Hides the sidebar shortcut only. The gallery stays available from the Command Center, /genui-gallery, and the workspace panel."
+            value={values.showSidebarGallery}
+            onValueChange={(showSidebarGallery) => {
+              void save({ ...values, showSidebarGallery }, revision);
+            }}
+          />
+        </SettingsCard>
+      </SettingsSection>
+
       <SettingsSection title="Agent instructions">
         <SettingsCard>
           <SettingsSwitch
