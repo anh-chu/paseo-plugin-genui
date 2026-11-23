@@ -35,22 +35,24 @@ export function Changes({ props }: { props: Props }) {
   const projectRpc = useProjectRpc();
   const rawTarget = optionalText(props.target);
   const parsedPaths = parsePathFilter(props.paths);
+  const pathsKey = parsedPaths.ok ? JSON.stringify(parsedPaths.value) : null;
   const [state, setState] = useState<ChangesResult | null>(null);
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
   // Keyed by the request so a new target or path filter starts collapsed again.
-  const requestKey = `${rawTarget ?? ""}|${JSON.stringify(parsedPaths.ok ? parsedPaths.value : null)}`;
+  const requestKey = `${rawTarget ?? ""}|${pathsKey ?? "null"}`;
   const [expandedFor, setExpandedFor] = useState<string | null>(null);
   const showAll = expandedFor === requestKey;
 
   useEffect(() => {
     const parsedTarget = parseChangesTarget(rawTarget);
-    if (!parsedTarget.ok || !parsedPaths.ok) return;
+    if (!parsedTarget.ok || pathsKey === null) return;
+    const paths = JSON.parse(pathsKey) as string[] | null;
     let live = true;
     void projectRpc
       .changes({
         agentId: agentId ?? "gallery",
         target: rawTarget,
-        paths: parsedPaths.value ? [...parsedPaths.value] : null,
+        paths,
         blockKey,
         refresh: false,
       })
@@ -60,7 +62,7 @@ export function Changes({ props }: { props: Props }) {
     return () => {
       live = false;
     };
-  }, [agentId, blockKey, parsedPaths, projectRpc, rawTarget]);
+  }, [agentId, blockKey, pathsKey, projectRpc, rawTarget]);
 
   if (!parsedPaths.ok) return <ErrorLine message={parsedPaths.error} />;
   if (state === null) {
@@ -312,15 +314,17 @@ export function Threads({ props }: { props: Props }) {
   const { theme, agentId } = useUiRuntime();
   const projectRpc = useProjectRpc();
   const parsedIds = parseThreadIds(props.ids);
+  const idsKey = parsedIds.ok ? JSON.stringify(parsedIds.value) : null;
   const [state, setState] = useState<ThreadsResult | null>(null);
 
   useEffect(() => {
-    if (!parsedIds.ok) return;
+    if (idsKey === null) return;
+    const ids = JSON.parse(idsKey) as string[] | null;
     let live = true;
     void projectRpc
       .threads({
         agentId: agentId ?? "gallery",
-        ids: parsedIds.value ? [...parsedIds.value] : null,
+        ids,
       })
       .then((res) => {
         if (live) setState(res);
@@ -328,7 +332,7 @@ export function Threads({ props }: { props: Props }) {
     return () => {
       live = false;
     };
-  }, [agentId, parsedIds, projectRpc]);
+  }, [agentId, idsKey, projectRpc]);
 
   if (!parsedIds.ok) return <ErrorLine message={parsedIds.error} />;
   if (state === null) {

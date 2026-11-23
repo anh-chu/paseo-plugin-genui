@@ -535,7 +535,9 @@ const Interpreter = defineClass(
           break;
         case "series": {
           const isNumbers = (item: Value) => isList(item) && item.every((n) => typeof n === "number" || n === null);
-          if (isNumbers(value) || (isPlainObject(value) && Object.values(value).every(isNumbers))) return value;
+          // A named series is a list of numbers or {values, tone?}, as the catalog documents and Chart renders.
+          const isEntry = (item: Value) => isNumbers(item) || (isPlainObject(item) && isNumbers((item as Readonly<Record<string, Value>>).values ?? null));
+          if (isNumbers(value) || (isPlainObject(value) && Object.values(value).every(isEntry))) return value;
           break;
         }
         case "any":
