@@ -483,7 +483,11 @@ function block(node: UiNode): string {
       const named: [string, readonly Value[]][] = Array.isArray(series)
         ? [["Value", series]]
         : isPlainObject(series)
-          ? Object.entries(series).map(([name, values]) => [name, list(values)])
+          ? Object.entries(series).map(([name, entry]) => [
+              name,
+              // A named series is a list of numbers or {values, tone} (the Chart series check accepts both).
+              list(isPlainObject(entry) ? (entry as Readonly<Record<string, Value>>).values : entry),
+            ])
           : [];
       const labels = list(props.labels);
       if (props.type === "pie") {

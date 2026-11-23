@@ -98,7 +98,7 @@ export const EXPECTED: Record<ParamKind, string> = {
   enum: "one of its allowed values",
   nodes: "components or text",
   list: "a list",
-  series: "a list of numbers or {name: [numbers]}",
+  series: "a list of numbers or {name: [numbers] | {values: [numbers], tone}}",
   binding: "a `$state`",
   actions: "actions",
   any: "a value",
