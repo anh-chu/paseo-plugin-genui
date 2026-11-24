@@ -72,6 +72,8 @@ Cards can collect a reply before anything is sent. A button with `Queue(text)` a
 - `/genui-demo [ComponentName]` — Insert a live interactive Gen-UI block into the current chat (e.g. `/genui-demo Decision` or `/genui-demo Map`).
 - `/genui-gallery` — Open the **Gen-UI Gallery** screen (176 examples across all 88 components, plus a live spec Playground).
 
+The **Gen-UI Gallery** sidebar row can be hidden under **Settings → Plugins → Generative UI → Sidebar**. The gallery screen, the `/genui-gallery` command, the Command Center item, and the workspace panel keep working.
+
 ## Develop
 
 ```bash

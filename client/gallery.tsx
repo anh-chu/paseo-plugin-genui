@@ -1,6 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import {
   useRpc,
+  useSettings,
   type PluginScreenProps,
   type PluginSidebarItemProps,
   type PluginWorkspacePanelProps,
@@ -14,6 +15,7 @@ import { COMPONENTS, componentSignature, type ComponentGroup, type ComponentName
 const COMPONENT_COUNT = Object.keys(COMPONENTS).length;
 import { componentsIn, GALLERY_GROUPS, searchComponents } from "../shared/logic/gallery-search";
 import { galleryGetRpc, galleryListRpc } from "../shared/rpc";
+import { genuiSettings } from "../shared/settings";
 import { SpecBlockView } from "./live-ui";
 import type { UiRuntime } from "./runtime";
 
@@ -39,6 +41,9 @@ function componentOfFile(file: string): ComponentName | null {
 }
 
 export function GallerySidebarItem({ currentScreen, openScreen }: PluginSidebarItemProps) {
+  const settings = useSettings(genuiSettings);
+  if (settings.status === "ready" && !settings.values.showSidebarGallery) return null;
+
   return (
     <SidebarRow
       icon="LayoutGrid"

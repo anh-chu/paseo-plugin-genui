@@ -8,6 +8,7 @@ export const genuiSettings = defineSettings({
   schema: z.object({
     autoInstructions: z.boolean().default(true),
     webLookups: z.boolean().default(true),
+    showSidebarGallery: z.boolean().default(true),
     extraFolders: z.string().default(""),
   }),
 });
