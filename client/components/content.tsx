@@ -346,8 +346,11 @@ export function File({ props }: { props: Props }) {
   const chip = (
     <Pressable
       accessibilityRole="button"
-      onPress={() => {
-        if (!onWeb && openFile) void openFile(filePath, line ?? undefined);
+      onPress={(event) => {
+        // react-native-web stops click propagation in Pressable, so the anchor below never
+        // sees the click: cancel its navigation here and open the file from here.
+        if (onWeb) event.preventDefault();
+        if (openFile) void openFile(filePath, line ?? undefined);
       }}
       style={{
         alignSelf: "flex-start",
