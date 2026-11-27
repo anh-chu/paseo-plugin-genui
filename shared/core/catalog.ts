@@ -108,7 +108,7 @@ export const COMPONENTS = {
   Draft: {
     group: "Content",
     params: [{ name: "markdown", kind: "text" }, { name: "title", kind: "string", optional: true }],
-    summary: "text the user approves before it is posted: rendered, with Source and Copy",
+    summary: "text the user approves before it is posted: rendered, with Edit, Source and Copy; an edit comes back with their reply",
   },
   Metric: {
     group: "Content",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { commentText, composeReply, editText, hasOwnNumber } from "./reply";
+import { compile, evaluate } from "../core";
+import { acceptDraftEdit, commentText, composeReply, draftScope, draftText, editText, hasOwnNumber, resolveDraftEdit } from "./reply";
 
 describe("reply", () => {
   it("joins queued items before the final message and drops blanks", () => {
@@ -25,5 +26,41 @@ describe("reply", () => {
     expect(hasOwnNumber("3) Release")).toBe(true);
     expect(hasOwnNumber("2026 roadmap")).toBe(false);
     expect(hasOwnNumber("Spec")).toBe(false);
+  });
+});
+
+describe("draftText", () => {
+  it("is null when the draft is unchanged", () => {
+    expect(draftText("Issue", "Body\n", "Body")).toBeNull();
+  });
+  it("carries the edited text", () => {
+    expect(draftText("Issue", "Body", "New body\n")).toBe('Use this edited version of the draft "Issue":\n\nNew body');
+    expect(draftText(null, "Body", "New")).toBe("Use this edited version of the draft:\n\nNew");
+  });
+});
+
+describe("Draft edit state", () => {
+  it("gives distinct Draft instances distinct scopes even with identical Markdown", () => {
+    const compiled = compile('Stack([Draft("Same", "One"), Draft("Same", "Two")])');
+    expect(compiled.program).not.toBeNull();
+    const { roots } = evaluate(compiled.program!, {});
+    const stack = roots[0]!;
+    const children = stack.props.children as readonly { key: string }[];
+    expect(children).toHaveLength(2);
+    expect(draftScope(children[0]!.key)).not.toBe(draftScope(children[1]!.key));
+    expect(draftScope(children[0]!.key)).toBe(draftScope(children[0]!.key));
+  });
+
+  it("validates stored edits and drops edits whose original text changed", () => {
+    const saved = acceptDraftEdit({ original: "Old body", edited: "Edited body" });
+    expect(saved).toEqual({ original: "Old body", edited: "Edited body" });
+    expect(resolveDraftEdit(saved, "Old body")).toBe("Edited body");
+    expect(resolveDraftEdit(saved, "New body")).toBeNull();
+    expect(resolveDraftEdit(null, "Old body")).toBeNull();
+
+    expect(acceptDraftEdit("legacy plain string")).toBeNull();
+    expect(acceptDraftEdit(null)).toBeNull();
+    expect(acceptDraftEdit({ original: "Only original" })).toBeNull();
+    expect(acceptDraftEdit(["Original", "Edited"])).toBeNull();
   });
 });
