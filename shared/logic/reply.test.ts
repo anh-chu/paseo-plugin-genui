@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commentText, composeReply, editText, hasOwnNumber } from "./reply";
+import { commentText, composeReply, draftText, editText, hasOwnNumber } from "./reply";
 
 describe("reply", () => {
   it("joins queued items before the final message and drops blanks", () => {
@@ -25,5 +25,15 @@ describe("reply", () => {
     expect(hasOwnNumber("3) Release")).toBe(true);
     expect(hasOwnNumber("2026 roadmap")).toBe(false);
     expect(hasOwnNumber("Spec")).toBe(false);
+  });
+});
+
+describe("draftText", () => {
+  it("is null when the draft is unchanged", () => {
+    expect(draftText("Issue", "Body\n", "Body")).toBeNull();
+  });
+  it("carries the edited text", () => {
+    expect(draftText("Issue", "Body", "New body\n")).toBe('Use this edited version of the draft "Issue":\n\nNew body');
+    expect(draftText(null, "Body", "New")).toBe("Use this edited version of the draft:\n\nNew");
   });
 });

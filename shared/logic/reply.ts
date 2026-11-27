@@ -27,6 +27,12 @@ export function editText(
   return changes.length === 0 ? null : `Edit ${label}: ${changes.join("; ")}`;
 }
 
+/** The user's rewrite of a Draft as a reply part, or null when it is unchanged. */
+export function draftText(title: string | null, before: string, after: string): string | null {
+  if (after.trim() === before.trim()) return null;
+  return `Use this edited version of the draft${title ? ` "${title}"` : ""}:\n\n${after.trim()}`;
+}
+
 /** True when a title already carries its own number, as in "2a. Checks" or "3) Release". */
 export function hasOwnNumber(title: string): boolean {
   return /^\s*\d+[a-z]?[.):]\s/i.test(title);
