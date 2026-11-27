@@ -1,10 +1,10 @@
-import React, { Component, type ComponentClass, type ComponentType, type ReactNode } from "react";
+import React, { Component, useContext, type ComponentClass, type ComponentType, type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import type { ComponentName } from "../shared/core/catalog";
 import { defineClass } from "../shared/core/define-class";
 import type { UiNode } from "../shared/core/types";
 import { text, type Props } from "../shared/logic/values";
-import { useUiRuntime } from "./runtime";
+import { NodeKeyContext, useUiRuntime } from "./runtime";
 
 export interface GroupedButton {
   readonly key: string;
@@ -69,7 +69,8 @@ export function LoadingPlaceholder({
   );
 }
 
-export function RenderNode({ node }: { node: UiNode }): ReactNode {
+export function RenderNode({ node, instanceKey }: { node: UiNode; instanceKey?: string }): ReactNode {
+  const parentKey = useContext(NodeKeyContext);
   if (node.type === "Error") return <ErrorLine message={text(node.props.message)} />;
   if (node.type === "Loading") {
     return (
@@ -81,7 +82,13 @@ export function RenderNode({ node }: { node: UiNode }): ReactNode {
   }
   if (!renderersMap) return null;
   const Renderer = renderersMap[node.type];
-  return <Renderer props={node.props} />;
+  const ownKey = instanceKey ?? node.key;
+  const path = parentKey === "" ? ownKey : `${parentKey}/${ownKey}`;
+  return (
+    <NodeKeyContext.Provider value={path}>
+      <Renderer props={node.props} />
+    </NodeKeyContext.Provider>
+  );
 }
 
 /** Buttons and Other sit together in one wrapping, left-aligned group. */
@@ -106,10 +113,10 @@ export function RenderNodes({
     seen.add(node.key);
     const element = isolate ? (
       <NodeBoundary key={key} node={node}>
-        <RenderNode node={node} />
+        <RenderNode node={node} instanceKey={key} />
       </NodeBoundary>
     ) : (
-      <RenderNode key={key} node={node} />
+      <RenderNode key={key} node={node} instanceKey={key} />
     );
 
     if (!isButtonLike(node) || !Group) {

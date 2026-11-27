@@ -99,7 +99,7 @@ export function Table({ props }: { props: Props }) {
                       style={{ flex: 1, minWidth: 110, paddingHorizontal: 10, paddingVertical: 8 }}
                     >
                       {isNode(cell) ? (
-                        <RenderNode node={cell} />
+                        <RenderNode node={cell} instanceKey={`${cell.key}:${rIdx}:${cIdx}`} />
                       ) : (
                         <Text selectable style={{ color: theme.colors.foreground, fontSize: 12.5 }}>
                           {text(cell)}

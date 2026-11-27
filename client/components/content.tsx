@@ -1,9 +1,9 @@
 import { Icon as PaseoIcon, Modal, TextInput, copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { ImageLightbox } from "./image-lightbox";
 import { ExternalLink } from "@getpaseo/plugin/client/ui";
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { Image as RNImage, Platform, Pressable, StyleSheet, Text as RNText, View } from "react-native";
-import { draftText } from "../../shared/logic/reply";
+import { acceptDraftEdit, draftScope, draftText, resolveDraftEdit, type SavedDraftEdit } from "../../shared/logic/reply";
 import { keyValuePairs } from "../../shared/logic/content-model";
 import { parseListRows } from "../../shared/logic/explain-logic";
 import { resolveIconName } from "../../shared/logic/icons";
@@ -11,7 +11,7 @@ import { entityKind, imageRef, inlineFacts, sourceLinks } from "../../shared/log
 import { finiteNumber, isNode, list, optionalText, text, tone, type Props } from "../../shared/logic/values";
 import { InlineMarkdown, MarkdownText } from "../markdown";
 import { ErrorLine, RenderNode } from "../node-renderer";
-import { InTableContext, propsKey, toneColor, toneMutedColor, usePersistedState, useUiRuntime, type ImageUrl } from "../runtime";
+import { InTableContext, NodeKeyContext, propsKey, toneColor, toneMutedColor, usePersistedState, useUiRuntime, type ImageUrl } from "../runtime";
 import { useItemFeedback } from "./feedback";
 
 export function Text({ props }: { props: Props }) {
@@ -61,17 +61,41 @@ export function Callout({ props }: { props: Props }) {
 const CALLOUT_ICONS = { good: "CircleCheck", warn: "AlertTriangle", bad: "CircleX", info: "Info" } as const;
 
 export function Draft({ props }: { props: Props }) {
-  const { theme, compact, answer, superseded, setQueued } = useUiRuntime();
-  const toast = useToast();
+  const nodeKey = useContext(NodeKeyContext);
   const original = text(props.markdown);
   const title = optionalText(props.title);
-  const scope = `draft:${propsKey(props.markdown)}`;
+  const scope = draftScope(nodeKey !== "" ? nodeKey : propsKey([title, original]));
+  return <DraftBody key={scope} scope={scope} original={original} title={title} />;
+}
+
+function DraftBody({ scope, original, title }: { scope: string; original: string; title: string | null }) {
+  const { theme, compact, answer, superseded, queued, setQueued } = useUiRuntime();
+  const toast = useToast();
   const [mode, setMode] = useState<"view" | "source" | "edit">("view");
-  const [edited, setEdited] = usePersistedState<string | null>(scope, null, (v) => (typeof v === "string" ? v : null));
+  const [saved, setSaved] = usePersistedState<SavedDraftEdit | null>(scope, null, acceptDraftEdit);
+  const edited = resolveDraftEdit(saved, original);
   const body = edited ?? original;
   const open = !answer && !superseded;
+  const prevTitle = useRef(title);
+
+  useEffect(() => {
+    if (saved !== null && saved.original !== original) {
+      setSaved(null);
+      if (open) setQueued(scope, null);
+      setMode((value) => (value === "edit" ? "view" : value));
+    }
+  }, [saved, original, open, scope, setSaved, setQueued]);
+
+  useEffect(() => {
+    if (prevTitle.current === title) return;
+    prevTitle.current = title;
+    if (open && edited !== null && queued(scope) !== null) {
+      setQueued(scope, draftText(title, original, edited));
+    }
+  }, [title, open, edited, original, scope, queued, setQueued]);
+
   const edit = (next: string | null) => {
-    setEdited(next);
+    setSaved(next === null ? null : { original, edited: next });
     setQueued(scope, next === null ? null : draftText(title, original, next));
   };
   const action = (label: string, onPress: () => void, active = false) => (
@@ -251,7 +275,7 @@ export function KeyValue({ props }: { props: Props }) {
             {k}
           </RNText>
           {isNode(v) ? (
-            <RenderNode node={v} />
+            <RenderNode node={v} instanceKey={`${v.key}:${idx}`} />
           ) : (
             <RNText
               selectable
@@ -582,7 +606,7 @@ export function List({ props }: { props: Props }) {
             </View>
             {item.value !== null ? (
               isNode(item.value) ? (
-                <RenderNode node={item.value} />
+                <RenderNode node={item.value} instanceKey={`${item.value.key}:${idx}`} />
               ) : (
                 <RNText style={{ color: toneColor(theme, t), fontSize: 12.5, fontWeight: "500" }}>
                   {text(item.value)}

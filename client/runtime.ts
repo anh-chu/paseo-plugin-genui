@@ -46,6 +46,7 @@ export function useUiRuntime(): UiRuntime {
 
 export const CardDepthContext = createContext(0);
 export const InTableContext = createContext(false);
+export const NodeKeyContext = createContext("");
 
 export function toneColor(theme: PluginTheme, t: Tone): string {
   switch (t) {

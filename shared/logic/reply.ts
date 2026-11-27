@@ -27,6 +27,30 @@ export function editText(
   return changes.length === 0 ? null : `Edit ${label}: ${changes.join("; ")}`;
 }
 
+export interface SavedDraftEdit {
+  readonly original: string;
+  readonly edited: string;
+}
+
+/** Persistence and reply-queue identity for one Draft instance. */
+export function draftScope(instanceKey: string): string {
+  return `draft:${instanceKey}`;
+}
+
+/** Validates a persisted Draft edit read from storage. */
+export function acceptDraftEdit(stored: unknown): SavedDraftEdit | null {
+  if (typeof stored !== "object" || stored === null || Array.isArray(stored)) return null;
+  const record = stored as Record<string, unknown>;
+  return typeof record.original === "string" && typeof record.edited === "string"
+    ? { original: record.original, edited: record.edited }
+    : null;
+}
+
+/** Returns the saved edit only when it was made against the current original Markdown. */
+export function resolveDraftEdit(saved: SavedDraftEdit | null, original: string): string | null {
+  return saved !== null && saved.original === original ? saved.edited : null;
+}
+
 /** The user's rewrite of a Draft as a reply part, or null when it is unchanged. */
 export function draftText(title: string | null, before: string, after: string): string | null {
   if (after.trim() === before.trim()) return null;

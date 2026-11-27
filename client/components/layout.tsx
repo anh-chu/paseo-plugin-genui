@@ -59,7 +59,7 @@ export function Row({ props }: { props: Props }) {
     >
       {children.map((child, idx) => (
         <View key={`${child.key}:${idx}`} style={compact ? { width: "100%" } : { flex: 1, minWidth: 160 }}>
-          <RenderNode node={child} />
+          <RenderNode node={child} instanceKey={`${child.key}:${idx}`} />
         </View>
       ))}
     </View>
@@ -91,7 +91,7 @@ export function Grid({ props }: { props: Props }) {
         <View key={rIdx} style={{ flexDirection: compact ? "column" : "row", gap: compact ? 8 : 10 }}>
           {row.map((child, cIdx) => (
             <View key={`${child.key}:${cIdx}`} style={{ flex: 1 }}>
-              <RenderNode node={child} />
+              <RenderNode node={child} instanceKey={`${child.key}:${rIdx}:${cIdx}`} />
             </View>
           ))}
         </View>
@@ -152,7 +152,7 @@ export function Tabs({ props }: { props: Props }) {
           })}
         </View>
       </ScrollView>
-      {activeChild ? <RenderNode node={activeChild} /> : null}
+      {activeChild ? <RenderNode node={activeChild} instanceKey={`${activeChild.key}:${activeIdx}`} /> : null}
     </View>
   );
 }
@@ -232,7 +232,7 @@ export function Carousel({ props }: { props: Props }) {
       <View style={{ flexDirection: "row", gap: 12, paddingVertical: 2 }}>
         {children.map((child, idx) => (
           <View key={`${child.key}:${idx}`} style={{ width: compact ? 260 : 320 }}>
-            <RenderNode node={child} />
+            <RenderNode node={child} instanceKey={`${child.key}:${idx}`} />
           </View>
         ))}
       </View>
