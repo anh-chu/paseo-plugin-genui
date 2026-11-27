@@ -89,11 +89,14 @@ export function Grid({ props }: { props: Props }) {
     <View style={{ gap: compact ? 8 : 10 }}>
       {rows.map((row, rIdx) => (
         <View key={rIdx} style={{ flexDirection: compact ? "column" : "row", gap: compact ? 8 : 10 }}>
-          {row.map((child, cIdx) => (
-            <View key={`${child.key}:${cIdx}`} style={{ flex: 1 }}>
-              <RenderNode node={child} instanceKey={`${child.key}:${rIdx}:${cIdx}`} />
-            </View>
-          ))}
+          {row.map((child, cIdx) => {
+            const idx = rIdx * cols + cIdx;
+            return (
+              <View key={`${child.key}:${idx}`} style={{ flex: 1 }}>
+                <RenderNode node={child} instanceKey={`${child.key}:${idx}`} />
+              </View>
+            );
+          })}
         </View>
       ))}
     </View>
